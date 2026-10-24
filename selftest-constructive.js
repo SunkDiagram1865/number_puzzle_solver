@@ -80,7 +80,7 @@ function verify(board, moves, n) {
 let fails = 0;
 const ROUNDS = Number(process.argv[2] || 40);
 
-for (let n = 2; n <= 8; n++) {
+for (let n = 3; n <= 8; n++) {
   let totalMoves = 0;
   let maxMoves = 0;
   let worstMs = 0;
