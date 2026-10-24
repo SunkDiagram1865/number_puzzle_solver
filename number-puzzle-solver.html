@@ -1,17 +1,15 @@
 <!DOCTYPE html>
 <!--
   数字华容道求解器 (Number Puzzle Solver)
-  支持 3×3 ~ 8×8 的数字华容道（N 数码 / Sliding Puzzle）求解，
-  3~5 阶给出已证明的最少步数，6~8 阶给出可行解。
+  支持 3x3 ~ 8x8 的数字华容道求解，3~5 阶给出已证明的最少步数，6~8 阶给出可行解；
+  并支持从截图自动识别盘面（参考图匹配 / 边缘拼接两种模式）。
 
   Copyright (C) 2026  number-puzzle-solver contributors
 
   本程序是自由软件：你可以根据自由软件基金会发布的 GNU 通用公共许可证
   的条款（第 3 版或你选择的任何更新版本）重新分发和/或修改它。
-
   本程序的发布是希望它有用，但不提供任何担保，甚至不包含适销性或
   特定用途适用性的默示担保。详见 GNU 通用公共许可证。
-
   你应该已随本程序收到一份 GNU 通用公共许可证副本；如果没有，
   请访问 <https://www.gnu.org/licenses/>。
 
@@ -19,14 +17,6 @@
   it under the terms of the GNU General Public License as published by
   the Free Software Foundation, either version 3 of the License, or
   (at your option) any later version.
-
-  This program is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-  GNU General Public License for more details.
-
-  You should have received a copy of the GNU General Public License
-  along with this program.  If not, see <https://www.gnu.org/licenses/>.
 -->
 <html lang="zh-CN">
 <head>
@@ -49,13 +39,11 @@
     --err: #ef5b5b;
     --radius: 14px;
   }
-
   * { box-sizing: border-box; }
-
   body {
     margin: 0;
     min-height: 100vh;
-    padding: 30px 16px 60px;
+    padding: 28px 16px 56px;
     background:
       radial-gradient(900px 520px at 12% -12%, #1b2b4d 0%, rgba(27,43,77,0) 62%),
       radial-gradient(760px 460px at 100% 0%, #231b3d 0%, rgba(35,27,61,0) 58%),
@@ -66,29 +54,13 @@
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
   }
-
   .wrap { max-width: 1060px; margin: 0 auto; }
-
-  .head { margin-bottom: 22px; }
-  .head h1 {
-    margin: 0 0 6px;
-    font-size: 26px;
-    letter-spacing: .5px;
-    font-weight: 700;
-  }
+  .head { margin-bottom: 20px; }
+  .head h1 { margin: 0 0 6px; font-size: 26px; letter-spacing: .5px; font-weight: 700; }
   .head h1 span { color: var(--accent); }
   .head .sub { margin: 0; color: var(--muted); font-size: 13px; }
-
-  .grid-2 {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 18px;
-    align-items: start;
-  }
-  @media (max-width: 860px) {
-    .grid-2 { grid-template-columns: minmax(0, 1fr); }
-  }
-
+  .grid-2 { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+  @media (max-width: 880px) { .grid-2 { grid-template-columns: minmax(0, 1fr); } }
   .card {
     background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(255,255,255,0));
     background-color: var(--card);
@@ -97,182 +69,122 @@
     padding: 18px;
     box-shadow: 0 18px 40px -28px rgba(0,0,0,.9);
   }
-
-  .card-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 14px;
-  }
-  .card-head h2 {
-    margin: 0;
-    font-size: 15px;
-    font-weight: 700;
-    letter-spacing: .4px;
-  }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .card-head h2 { margin: 0; font-size: 15px; font-weight: 700; letter-spacing: .4px; }
   .card-head h2::before {
-    content: "";
-    display: inline-block;
-    width: 3px; height: 13px;
-    margin-right: 8px;
-    border-radius: 2px;
-    background: var(--accent);
-    vertical-align: -1px;
+    content: ""; display: inline-block; width: 3px; height: 13px; margin-right: 8px;
+    border-radius: 2px; background: var(--accent); vertical-align: -1px;
   }
-
   .size-picker { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
   select {
-    background: var(--cell);
-    color: var(--text);
-    border: 1px solid var(--line);
-    border-radius: 9px;
-    padding: 6px 10px;
-    font-size: 13px;
-    font-family: inherit;
-    outline: none;
-    cursor: pointer;
+    background: var(--cell); color: var(--text); border: 1px solid var(--line);
+    border-radius: 9px; padding: 6px 10px; font-size: 13px; font-family: inherit; outline: none; cursor: pointer;
   }
   select:focus { border-color: var(--accent); }
 
-  /* ---------- 输入棋盘 ---------- */
-  .board {
-    display: grid;
-    gap: 8px;
-    width: 100%;
-    max-width: 420px;
-    margin: 0 auto 14px;
-  }
-
-  .cell {
-    aspect-ratio: 1 / 1;
-    min-width: 0;
-    width: 100%;
-    padding: 0;
-    border-radius: 12px;
-    border: 1px solid var(--line);
-    background: var(--cell);
-    color: var(--text);
-    font-family: inherit;
-    font-size: var(--cell-font, 22px);
-    font-weight: 700;
-    text-align: center;
-    outline: none;
-    transition: border-color .15s, box-shadow .15s, background .15s;
-    -moz-appearance: textfield;
-  }
-  .cell::-webkit-outer-spin-button,
-  .cell::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-  .cell::placeholder { color: #4d566b; font-weight: 500; }
-  .cell:focus {
-    border-color: var(--accent);
-    box-shadow: 0 0 0 3px var(--accent-soft);
-    background: var(--cell-2);
-  }
-  .cell.is-blank {
-    background: #12151c;
-    border-style: dashed;
-    color: #566078;
-  }
-
   .mode-row { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 6px; }
-  .mode-opt {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: #b8c0d2;
-    cursor: pointer;
-    user-select: none;
-  }
+  .mode-opt { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: #b8c0d2; cursor: pointer; user-select: none; }
   .mode-opt input { accent-color: var(--accent); cursor: pointer; margin: 0; }
-
-  .mode-tip {
-    margin: 0 0 14px;
-    font-size: 12px;
-    line-height: 1.5;
-    color: var(--muted);
-    min-height: 18px;
-  }
+  .mode-tip { margin: 0 0 12px; font-size: 12px; line-height: 1.5; color: var(--muted); min-height: 18px; }
   .mode-tip.warn { color: var(--warn); }
 
-  .hint {
-    color: var(--muted);
-    font-size: 12.5px;
-    margin: 0 auto 16px;
-    max-width: 420px;
-    text-align: center;
+  .img-import { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 8px; }
+  .drop {
+    position: relative; border: 1px dashed var(--line); border-radius: 12px; background: #12151d;
+    min-height: 76px; display: flex; align-items: center; justify-content: center;
+    cursor: pointer; overflow: hidden; transition: border-color .15s, background .15s;
   }
+  .drop:hover, .drop.drag { border-color: var(--accent); background: #151b28; }
+  .drop.has-img { border-style: solid; }
+  .drop.paste-target {
+    border-color: rgba(79, 140, 255, .9);
+    background: #151d2c;
+    box-shadow: inset 0 0 0 1px rgba(79, 140, 255, .35), 0 0 16px -6px rgba(79, 140, 255, .8);
+  }
+  .paste-badge {
+    position: absolute;
+    left: 6px;
+    top: 6px;
+    font-size: 10px;
+    line-height: 1.5;
+    padding: 0 5px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    display: none;
+    pointer-events: none;
+    z-index: 2;
+  }
+  .drop.paste-target .paste-badge { display: block; }
+  .drop-thumb { position: absolute; inset: 0; background-size: cover; background-position: center; opacity: .5; }
+  .drop-body { position: relative; text-align: center; padding: 6px 8px; border-radius: 8px; }
+  .drop.has-img .drop-body { background: rgba(8, 10, 16, .66); }
+  .drop-t { font-size: 12.5px; font-weight: 600; color: #cdd5e6; }
+  .drop-s { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .drop-x {
+    position: absolute; top: 6px; right: 6px; width: 18px; height: 18px; padding: 0; line-height: 1;
+    border-radius: 50%; border: none; cursor: pointer; background: rgba(0,0,0,.58); color: #fff;
+    font-size: 13px; display: none; align-items: center; justify-content: center;
+  }
+  .drop.has-img .drop-x { display: flex; }
+
+  .recog-status { font-size: 12px; color: var(--muted); min-height: 17px; margin-bottom: 10px; line-height: 1.5; }
+  .recog-status.is-ok { color: var(--ok); }
+  .recog-status.is-warn { color: var(--warn); }
+  .recog-status.is-err { color: var(--err); }
+  .recog-status.is-busy { color: #a9c4ff; }
+
+  .recog-previews { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+  .recog-previews figure { margin: 0; text-align: center; }
+  .recog-previews canvas {
+    width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line);
+    background: #0b0e14; display: block;
+  }
+  .recog-previews figcaption { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+  .board { display: grid; gap: 8px; width: 100%; max-width: 420px; margin: 0 auto 14px; }
+  .cell {
+    aspect-ratio: 1 / 1; min-width: 0; width: 100%; padding: 0; border-radius: 12px;
+    border: 1px solid var(--line); background: var(--cell); color: var(--text);
+    font-family: inherit; font-size: var(--cell-font, 22px); font-weight: 700; text-align: center;
+    outline: none; transition: border-color .15s, box-shadow .15s, background .15s;
+    -moz-appearance: textfield;
+  }
+  .cell::-webkit-outer-spin-button, .cell::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .cell::placeholder { color: #4d566b; font-weight: 500; }
+  .cell:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); background: var(--cell-2); }
+  .cell.is-blank { background: #12151c; border-style: dashed; color: #566078; }
+
+  .hint { color: var(--muted); font-size: 12.5px; margin: 0 auto 16px; max-width: 420px; text-align: center; }
   .hint b { color: #b9c2d6; font-weight: 600; }
-
   .btn-row { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
-
   .btn {
-    appearance: none;
-    border: 1px solid var(--line);
-    background: var(--cell);
-    color: var(--text);
-    font-family: inherit;
-    font-size: 13.5px;
-    font-weight: 600;
-    padding: 10px 16px;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: transform .08s, background .15s, border-color .15s, opacity .15s;
+    appearance: none; border: 1px solid var(--line); background: var(--cell); color: var(--text);
+    font-family: inherit; font-size: 13.5px; font-weight: 600; padding: 10px 16px; border-radius: 10px;
+    cursor: pointer; transition: transform .08s, background .15s, border-color .15s, opacity .15s;
   }
   .btn:hover:not(:disabled) { background: var(--cell-2); border-color: #3b455a; }
   .btn:active:not(:disabled) { transform: translateY(1px); }
   .btn:disabled { opacity: .42; cursor: not-allowed; }
-
   .btn.primary {
-    background: linear-gradient(180deg, #5b95ff, #3f7bf0);
-    border-color: #6ea2ff;
-    color: #fff;
+    background: linear-gradient(180deg, #5b95ff, #3f7bf0); border-color: #6ea2ff; color: #fff;
     box-shadow: 0 8px 22px -12px rgba(79,140,255,.95);
   }
   .btn.primary:hover:not(:disabled) { background: linear-gradient(180deg, #6b9fff, #4a83f5); }
-  .btn.primary.is-busy {
-    background: linear-gradient(180deg, #4a5264, #3a4152);
-    border-color: #5a6379;
-    box-shadow: none;
-  }
+  .btn.primary.is-busy { background: linear-gradient(180deg, #4a5264, #3a4152); border-color: #5a6379; box-shadow: none; }
   .btn.small { padding: 7px 13px; font-size: 12.5px; }
 
-  /* ---------- 结果区 ---------- */
   .stats { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 10px; margin-bottom: 12px; }
   .stat {
-    background: #12151d;
-    border: 1px solid var(--line);
-    border-radius: 11px;
-    padding: 10px 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
+    background: #12151d; border: 1px solid var(--line); border-radius: 11px; padding: 10px 12px;
+    display: flex; flex-direction: column; gap: 2px; min-width: 0;
   }
   .stat-k { color: var(--muted); font-size: 11.5px; letter-spacing: .3px; }
-  .stat-v {
-    font-size: 19px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
+  .stat-v { font-size: 19px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .status {
-    border-radius: 10px;
-    border: 1px solid var(--line);
-    background: #12151d;
-    padding: 10px 12px;
-    font-size: 13px;
-    color: var(--muted);
-    margin-bottom: 14px;
-    min-height: 41px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    transition: color .2s, border-color .2s;
+    border-radius: 10px; border: 1px solid var(--line); background: #12151d; padding: 10px 12px;
+    font-size: 13px; color: var(--muted); margin-bottom: 14px; min-height: 41px;
+    display: flex; align-items: center; gap: 8px; transition: color .2s, border-color .2s;
   }
   .status.is-busy { color: #a9c4ff; border-color: rgba(79,140,255,.45); }
   .status.is-ok { color: var(--ok); border-color: rgba(53,196,106,.4); }
@@ -281,71 +193,27 @@
 
   .preview { max-width: 300px; margin-bottom: 14px; }
   .tile {
-    aspect-ratio: 1 / 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 11px;
-    background: linear-gradient(180deg, #2b3445, #232a39);
-    border: 1px solid #333d51;
-    font-size: var(--tile-font, 18px);
-    font-weight: 700;
-    color: #dfe6f5;
-    user-select: none;
-    transition: background .18s;
+    aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center; border-radius: 11px;
+    background: linear-gradient(180deg, #2b3445, #232a39); border: 1px solid #333d51;
+    font-size: var(--tile-font, 18px); font-weight: 700; color: #dfe6f5; user-select: none;
   }
   .tile.blank { background: transparent; border: 1px dashed #2c3342; }
-  .tile.pop { animation: pop .26s ease; }
-  @keyframes pop {
-    0% { transform: scale(.82); background: #3d6fd6; }
-    100% { transform: scale(1); }
-  }
 
   .play-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    flex-wrap: wrap;
-    margin-bottom: 14px;
-    padding-bottom: 14px;
-    border-bottom: 1px dashed var(--line);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 14px;
+    padding-bottom: 14px; border-bottom: 1px dashed var(--line);
   }
-  .step-label {
-    margin-left: auto;
-    color: var(--muted);
-    font-size: 12.5px;
-    font-variant-numeric: tabular-nums;
-  }
-
+  .step-label { margin-left: auto; color: var(--muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
   .moves-head { color: var(--muted); font-size: 12px; margin-bottom: 8px; letter-spacing: .3px; }
-  .moves {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    max-height: 210px;
-    overflow-y: auto;
-    padding-right: 4px;
-  }
+  .moves { display: flex; flex-wrap: wrap; gap: 6px; max-height: 210px; overflow-y: auto; padding-right: 4px; }
   .moves .muted { color: var(--muted); font-size: 13px; }
   .chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    background: #12151d;
-    border: 1px solid var(--line);
-    border-radius: 8px;
-    padding: 3px 8px;
-    font-size: 12.5px;
-    font-variant-numeric: tabular-nums;
-    color: #c6cee0;
+    display: inline-flex; align-items: center; gap: 2px; background: #12151d; border: 1px solid var(--line);
+    border-radius: 8px; padding: 3px 8px; font-size: 12.5px; font-variant-numeric: tabular-nums; color: #c6cee0;
   }
   .chip b { color: #fff; font-weight: 700; }
   .chip.now { border-color: var(--accent); background: var(--accent-soft); color: #cfe0ff; }
-  .chip-index {
-    color: #5c657a;
-    font-size: 11px;
-    margin-right: 3px;
-  }
+  .chip-index { color: #5c657a; font-size: 11px; margin-right: 3px; }
 
   .foot { color: #5c6579; font-size: 12px; text-align: center; margin-top: 22px; line-height: 1.8; }
   .license-note { margin-top: 10px; font-size: 11.5px; }
@@ -357,24 +225,22 @@
 <div class="wrap">
   <header class="head">
     <h1>数字华容道 <span>求解器</span></h1>
-    <p class="sub">支持 <b>3×3 ~ 8×8</b>：3~5 阶给出<strong>最少步数</strong>与完整解法，6~8 阶给出<strong>可行解</strong>与逐步演示。</p>
+    <p class="sub">支持 <b>3x3 ~ 8x8</b>：3~5 阶给出<strong>最少步数</strong>与完整解法，6~8 阶给出<strong>可行解</strong>与逐步演示；也可直接从截图识别盘面。</p>
   </header>
 
   <main class="grid-2">
-    <!-- 输入 -->
     <section class="card">
       <div class="card-head">
         <h2>1. 输入局面</h2>
         <div class="size-picker">
           <label for="size">阶数</label>
           <select id="size">
-            <option value="2">2 × 2</option>
-            <option value="3" selected>3 × 3</option>
-            <option value="4">4 × 4</option>
-            <option value="5">5 × 5</option>
-            <option value="6">6 × 6</option>
-            <option value="7">7 × 7</option>
-            <option value="8">8 × 8</option>
+            <option value="3" selected>3 x 3</option>
+            <option value="4">4 x 4</option>
+            <option value="5">5 x 5</option>
+            <option value="6">6 x 6</option>
+            <option value="7">7 x 7</option>
+            <option value="8">8 x 8</option>
           </select>
         </div>
       </div>
@@ -391,10 +257,45 @@
       </div>
       <p id="mode-tip" class="mode-tip"></p>
 
+      <div class="img-import">
+        <div class="drop" id="drop-shot" data-slot="shot" tabindex="0" role="button" title="上传局面截图">
+          <div class="drop-thumb" hidden></div>
+          <span class="paste-badge">粘贴目标</span>
+          <button class="drop-x" type="button" title="清除">&times;</button>
+          <div class="drop-body">
+            <div class="drop-t">局面截图</div>
+            <div class="drop-s">点击 / 拖入 / Ctrl+V</div>
+          </div>
+          <input type="file" accept="image/*" hidden />
+        </div>
+        <div class="drop" id="drop-ref" data-slot="ref" tabindex="0" role="button" title="上传参考原图（可选）">
+          <div class="drop-thumb" hidden></div>
+          <span class="paste-badge">粘贴目标</span>
+          <button class="drop-x" type="button" title="清除">&times;</button>
+          <div class="drop-body">
+            <div class="drop-t">参考原图（可选）</div>
+            <div class="drop-s">悬停后再 Ctrl+V 粘贴到此</div>
+          </div>
+          <input type="file" accept="image/*" hidden />
+        </div>
+      </div>
+      <div id="recog-status" class="recog-status"></div>
+
+      <div class="recog-previews" id="recog-previews" hidden>
+        <figure>
+          <canvas id="pv-detect" width="220" height="220"></canvas>
+          <figcaption>网格检测</figcaption>
+        </figure>
+        <figure>
+          <canvas id="pv-recon" width="220" height="220"></canvas>
+          <figcaption>识别还原图（右下角为空格）</figcaption>
+        </figure>
+      </div>
+
       <div id="grid" class="board"></div>
 
       <p class="hint">
-        每格填 <b>1 ~ N²−1</b> 的数字，其中一格填 <b>0</b> 或留空，表示空格的位置。
+        每格填 <b>1 ~ N&sup2;-1</b> 的数字，其中一格填 <b>0</b> 或留空，表示空格的位置。
       </p>
 
       <div class="btn-row">
@@ -404,25 +305,24 @@
       </div>
     </section>
 
-    <!-- 结果 -->
     <section class="card">
       <div class="card-head">
         <h2>2. 求解结果</h2>
       </div>
 
       <div class="stats">
-        <div class="stat"><span class="stat-k" id="stat-steps-k">最优步数</span><span class="stat-v" id="stat-steps">—</span></div>
-        <div class="stat"><span class="stat-k">搜索节点</span><span class="stat-v" id="stat-nodes">—</span></div>
-        <div class="stat"><span class="stat-k">耗时</span><span class="stat-v" id="stat-time">—</span></div>
+        <div class="stat"><span class="stat-k" id="stat-steps-k">最优步数</span><span class="stat-v" id="stat-steps">-</span></div>
+        <div class="stat"><span class="stat-k">搜索节点</span><span class="stat-v" id="stat-nodes">-</span></div>
+        <div class="stat"><span class="stat-k">耗时</span><span class="stat-v" id="stat-time">-</span></div>
       </div>
 
-      <div id="status" class="status">等待输入局面…</div>
+      <div id="status" class="status">等待输入局面...</div>
 
       <div id="preview" class="board preview"></div>
 
       <div class="play-row">
         <button id="btn-prev" class="btn small" disabled>上一步</button>
-        <button id="btn-play" class="btn small" disabled>▶ 播放</button>
+        <button id="btn-play" class="btn small" disabled>播放</button>
         <button id="btn-next" class="btn small" disabled>下一步</button>
         <select id="speed" title="播放速度">
           <option value="400">慢速</option>
@@ -439,34 +339,31 @@
   </main>
 
   <p class="foot">
-    <b>3×3 ~ 5×5</b>：可用「最优解」，给的是理论上最少的步数。<br />
-    <b>6×6 ~ 8×8</b>：最优解在计算上不可行（8×8 的状态数约 10⁸⁹），请用「快速解」——逐层构造，保证有解。<br />
+    <b>3x3 ~ 5x5</b>：可用「最优解」，给的是理论上最少的步数。<br />
+    <b>6x6 ~ 8x8</b>：最优解在计算上不可行（8x8 的状态数约 10^89），请用「快速解」——逐层构造，保证有解。<br />
     计算在后台线程运行，界面不会卡死；点击「取消计算」可随时中断。
   </p>
 
   <p class="foot license-note">
-    Copyright © 2026 number-puzzle-solver contributors ·
-    以 <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">GNU General Public License v3.0</a> 或更高版本发布 ·
+    Copyright &copy; 2026 number-puzzle-solver contributors &middot;
+    以 <a href="https://www.gnu.org/licenses/gpl-3.0.html" target="_blank" rel="noopener">GNU General Public License v3.0</a> 或更高版本发布 &middot;
     不提供任何担保
   </p>
 </div>
 
-<!-- =========================================================
-     求解器（Web Worker 源码）。单独放在这里，主线程也会在
-     Worker 不可用时（例如某些浏览器的本地文件限制）直接复用。
-     ========================================================= -->
+<!-- ============================================================
+     求解器内核（Web Worker 源码；Worker 不可用时主线程复用同一份）
+     ============================================================ -->
 <script id="solver-src" type="text/js-worker">
 'use strict';
 
-/**
- * 求解 N 数码（数字华容道）的最短解。
- * 算法：IDA*（迭代加深 A*）+ 曼哈顿距离 + 线性冲突启发式 + 置换表剪枝。
- * 在该启发式下 IDA* 返回的一定是最短步数解。
- */
+/* ------------------------------------------------------------
+   最优解：IDA*（迭代加深 A*）+ 曼哈顿距离 + 线性冲突
+   启发式可采纳，因此返回的一定是最少步数解
+   ------------------------------------------------------------ */
 function solvePuzzle(startBoard, n, limits, onProgress) {
   const T = n * n;
 
-  /* ---------- 预计算 ---------- */
   const goalRow = new Int8Array(T + 1);
   const goalCol = new Int8Array(T + 1);
   for (let v = 1; v < T; v++) {
@@ -474,7 +371,7 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
     goalCol[v] = (v - 1) % n;
   }
 
-  // manh[v * T + p] = 数字 v 在位置 p 时到目标位置的曼哈顿距离
+  // manh[v * T + p] = 数字 v 位于 p 时到目标位置的曼哈顿距离
   const manh = new Uint8Array((T + 1) * T);
   for (let v = 1; v < T; v++) {
     const base = v * T;
@@ -488,18 +385,15 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
   const board = new Uint8Array(T);
   for (let i = 0; i < T; i++) board[i] = startBoard[i];
   const blankStart = board.indexOf(0);
+  const seq = new Uint8Array(T);
 
-  const seq = new Uint8Array(T); // 线性冲突用的临时区
-
-  /* ---------- 启发式：曼哈顿距离 + 线性冲突 ---------- */
   function heuristic() {
     let h = 0;
     for (let p = 0; p < T; p++) {
       const v = board[p];
       if (v !== 0) h += manh[v * T + p];
     }
-
-    // 行线性冲突：同一行内两个「已在目标行」的数字顺序颠倒，至少要多花 2 步
+    // 行线性冲突
     for (let r = 0; r < n; r++) {
       let k = 0;
       const base = r * n;
@@ -512,7 +406,6 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
         for (let j = 0; j < i; j++) if (seq[j] > x) h += 2;
       }
     }
-
     // 列线性冲突
     for (let c = 0; c < n; c++) {
       let k = 0;
@@ -528,10 +421,9 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
     return h;
   }
 
-  /* ---------- 搜索参数 ---------- */
   const maxNodes = (limits && limits.maxNodes) || 40000000;
   const maxMs = (limits && limits.maxMs) || 120000;
-  const TT_LIMIT = 1200000; // 置换表容量上限，超过就清空（防止内存爆掉）
+  const TT_LIMIT = 1200000;
 
   const t0 = Date.now();
   let nodes = 0;
@@ -549,16 +441,12 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
     return s;
   }
 
-  /**
-   * 深度优先搜索。
-   * 返回 -1 表示找到解；-2 表示被中断；否则返回该子树中超出阈值的 f 最小值。
-   */
+  // 返回 -1 找到解；-2 中断；否则返回子树中超出阈值的最小 f
   function search(g, bound, blank, prevBlank) {
     if (abortReason) return -2;
 
     const h = heuristic();
-    const f = g + h;
-    if (f > bound) return f;
+    if (g + h > bound) return g + h;
     if (h === 0) return -1;
 
     nodes++;
@@ -572,7 +460,7 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
       }
     }
 
-    // 置换表：同一局面若已用更少或相同的步数到达过，即可剪掉
+    // 置换表：同一局面若已用不多于当前的步数到达过，即可剪掉
     if (g > 0) {
       const key = makeKey();
       const seen = tt.get(key);
@@ -590,11 +478,11 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
       const nc = c + dc[d];
       if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
       const nb = nr * n + nc;
-      if (nb === prevBlank) continue; // 不立刻走回头路
+      if (nb === prevBlank) continue;
 
       const v = board[nb];
-      board[blank] = v; // 数字 v 滑动到空格处
-      board[nb] = 0;    // 新空格
+      board[blank] = v;
+      board[nb] = 0;
 
       const t = search(g + 1, bound, nb, blank);
 
@@ -602,7 +490,6 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
       board[blank] = 0;
 
       if (t === -1) {
-        // 自底向上压栈，最后反转即得完整解
         trail.push({ tile: v, from: nb, to: blank });
         return -1;
       }
@@ -612,51 +499,32 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
     return min;
   }
 
-  /* ---------- IDA* 主循环 ---------- */
   let h0 = heuristic();
-  if (h0 === 0) {
-    return { ok: true, steps: 0, moves: [], nodes: 0, elapsed: 0 };
-  }
+  if (h0 === 0) return { ok: true, steps: 0, moves: [], nodes: 0, elapsed: 0 };
 
   let bound = h0;
-  let stuckRounds = 0;
+  let stuck = 0;
 
   for (let iter = 0; iter < 5000; iter++) {
-    // 置换表必须每轮清空：上一轮是在更小的阈值下剪枝的，
-    // 保留旧条目会把「本轮本可以走通」的分支错误地剪掉。
+    // 置换表必须每轮清空：上一轮是在更小阈值下剪枝的，旧条目会误剪本轮可走通的分支
     tt.clear();
     trail.length = 0;
     const t = search(0, bound, blankStart, -1);
 
     if (t === -1) {
       const moves = trail.slice().reverse();
-      return {
-        ok: true,
-        steps: moves.length,
-        moves: moves,
-        nodes: nodes,
-        elapsed: Date.now() - t0
-      };
+      return { ok: true, steps: moves.length, moves: moves, nodes: nodes, elapsed: Date.now() - t0 };
     }
     if (t === -2) {
-      return {
-        ok: false,
-        reason: abortReason || 'abort',
-        nodes: nodes,
-        elapsed: Date.now() - t0
-      };
+      return { ok: false, reason: abortReason || 'abort', nodes: nodes, elapsed: Date.now() - t0 };
     }
     if (!isFinite(t)) {
-      // 理论上不该发生；保底避免死循环
-      stuckRounds++;
-      if (stuckRounds > 40) {
-        return { ok: false, reason: 'stuck', nodes: nodes, elapsed: Date.now() - t0 };
-      }
+      stuck++;
+      if (stuck > 40) return { ok: false, reason: 'stuck', nodes: nodes, elapsed: Date.now() - t0 };
       bound += 2;
       continue;
     }
-
-    stuckRounds = 0;
+    stuck = 0;
     bound = t;
     if (onProgress) onProgress({ nodes: nodes, bound: bound, elapsed: Date.now() - t0 });
   }
@@ -664,35 +532,28 @@ function solvePuzzle(startBoard, n, limits, onProgress) {
   return { ok: false, reason: 'iterate', nodes: nodes, elapsed: Date.now() - t0 };
 }
 
-/**
- * 构造法求解器：保证给出一个可行解，但不保证步数最少。
- * 用于 6x6 及以上——这些规模求「最优解」在计算上不可行
- * （8x8 的状态空间约 10^89，最优解搜索没有可行算法）。
- *
- * 思路：逐层剥离。
- *   每一轮把当前子棋盘的最上面一行、最左边一列归位，子棋盘缩小一圈；
- *   最后剩下 3x3，用 BFS 在 181440 个状态里精确求解。
- * 每一步用「空格绕路 + 推动目标块」的方式完成，绝不碰已归位的格子。
- */
+/* ------------------------------------------------------------
+   快速解：逐层构造法（保证可解，不保证最少步数）
+   每轮把当前子棋盘的最上一行、最左一列归位，子棋盘缩小一圈；
+   最后剩下 3x3 用 BFS 精确求解（181440 个可达状态）
+   ------------------------------------------------------------ */
 function solveConstructive(startBoard, n) {
   const T = n * n;
   const board = new Uint8Array(T);
   for (let i = 0; i < T; i++) board[i] = startBoard[i];
 
-  const frozen = new Uint8Array(T); // 已经归位、不允许再动的格子
+  const frozen = new Uint8Array(T);
   const moves = [];
   const t0 = Date.now();
   let blank = board.indexOf(0);
 
   function fail(reason) {
     return {
-      ok: false,
-      reason: reason,
-      moves: [],
-      elapsed: Date.now() - t0,
+      ok: false, reason: reason, moves: [], elapsed: Date.now() - t0,
       debug: { board: Array.from(board), frozen: Array.from(frozen), blank: blank }
     };
   }
+
   function neighborsOf(p) {
     const r = (p / n) | 0;
     const c = p % n;
@@ -712,14 +573,65 @@ function solveConstructive(startBoard, n) {
     blank = cell;
   }
 
-  /**
-   * 把两个数字同时送到两个目标格。
-   *
-   * 一行的最后两格、一列的最后两格都是「角落 + 死角」的组合，
-   * 单独推其中一个必定会把另一个堵死。这里用 (A位置, B位置, 空格位置) 三元组做 BFS，
-   * 其余块统统当成无差别杂物——状态数最多 64³ ≈ 26 万，依然很快，
-   * 而且能自动找出「先摆好再旋转」这类人类 maneuvers。
-   */
+  function isAdjacent(p, q) {
+    const pr = (p / n) | 0, pc = p % n;
+    const qr = (q / n) | 0, qc = q % n;
+    return (pr === qr && Math.abs(pc - qc) === 1) || (pc === qc && Math.abs(pr - qr) === 1);
+  }
+
+  // 把单个数字送到目标格：以 (空格, 目标块) 二元组做 BFS，其余块视为无差别杂物
+  function bringTile(tile, target, blocked) {
+    const start = board.indexOf(tile);
+    if (start === target) return true;
+
+    const size = T * T;
+    const prevState = new Int32Array(size).fill(-1);
+    const visited = new Uint8Array(size);
+    const queue = new Int32Array(size);
+    let head = 0, tail = 0;
+
+    const s0 = blank * T + start;
+    visited[s0] = 1;
+    queue[tail++] = s0;
+
+    let goalState = -1;
+    while (head < tail) {
+      const s = queue[head++];
+      const b = (s / T) | 0;
+      const t = s - b * T;
+      if (t === target) { goalState = s; break; }
+
+      const nb = neighborsOf(b);
+      for (let i = 0; i < nb.length; i++) {
+        const q = nb[i];
+        if (q === t || frozen[q] || (blocked && blocked[q])) continue;
+        const ns = q * T + t;
+        if (visited[ns]) continue;
+        visited[ns] = 1;
+        prevState[ns] = s;
+        queue[tail++] = ns;
+      }
+      if (isAdjacent(t, b)) {
+        const ns = t * T + b;
+        if (!visited[ns]) {
+          visited[ns] = 1;
+          prevState[ns] = s;
+          queue[tail++] = ns;
+        }
+      }
+    }
+
+    if (goalState < 0) return false;
+
+    const chain = [];
+    let s = goalState;
+    while (s !== s0) { chain.push(s); s = prevState[s]; }
+    // 状态编码是 blank*T + tile，所以空格位置是 (s / T) | 0
+    for (let i = chain.length - 1; i >= 0; i--) slide((chain[i] / T) | 0);
+    return true;
+  }
+
+  // 同时归位两个块：以 (A, B, 空格) 三元组做 BFS
   function placeTwo(tileA, targetA, tileB, targetB, blocked) {
     const pA0 = board.indexOf(tileA);
     const pB0 = board.indexOf(tileB);
@@ -727,11 +639,9 @@ function solveConstructive(startBoard, n) {
 
     const size = T * T * T;
     const prevState = new Int32Array(size).fill(-1);
-    const prevAct = new Uint8Array(size);
     const visited = new Uint8Array(size);
     const queue = new Int32Array(size);
-    let head = 0;
-    let tail = 0;
+    let head = 0, tail = 0;
 
     const enc = (a, b, z) => (a * T + b) * T + z;
     const s0 = enc(pA0, pB0, blank);
@@ -745,7 +655,6 @@ function solveConstructive(startBoard, n) {
       const t1 = (s - z) / T;
       const b = t1 % T;
       const a = (t1 - b) / T;
-
       if (a === targetA && b === targetB) { goalState = s; break; }
 
       const nb = neighborsOf(z);
@@ -756,29 +665,15 @@ function solveConstructive(startBoard, n) {
         if (visited[ns]) continue;
         visited[ns] = 1;
         prevState[ns] = s;
-        prevAct[ns] = 1; // 空格自己走一格
         queue[tail++] = ns;
       }
-
-      // 推 A
       if (isAdjacent(a, z)) {
         const ns = enc(z, b, a);
-        if (!visited[ns]) {
-          visited[ns] = 1;
-          prevState[ns] = s;
-          prevAct[ns] = 2;
-          queue[tail++] = ns;
-        }
+        if (!visited[ns]) { visited[ns] = 1; prevState[ns] = s; queue[tail++] = ns; }
       }
-      // 推 B
       if (isAdjacent(b, z)) {
         const ns = enc(a, z, b);
-        if (!visited[ns]) {
-          visited[ns] = 1;
-          prevState[ns] = s;
-          prevAct[ns] = 3;
-          queue[tail++] = ns;
-        }
+        if (!visited[ns]) { visited[ns] = 1; prevState[ns] = s; queue[tail++] = ns; }
       }
     }
 
@@ -787,94 +682,11 @@ function solveConstructive(startBoard, n) {
     const chain = [];
     let s = goalState;
     while (s !== s0) { chain.push(s); s = prevState[s]; }
-    for (let i = chain.length - 1; i >= 0; i--) {
-      // 三种动作回放时统一成「把新状态里空格所在那格滑进空格」
-      slide(chain[i] % T);
-    }
+    for (let i = chain.length - 1; i >= 0; i--) slide(chain[i] % T);
     return true;
   }
 
-  function isAdjacent(p, q) {
-    const pr = (p / n) | 0;
-    const pc = p % n;
-    const qr = (q / n) | 0;
-    const qc = q % n;
-    return (pr === qr && Math.abs(pc - qc) === 1) || (pc === qc && Math.abs(pr - qr) === 1);
-  }
-
-  /**
-   * 把数字 tile 挪到格子 target。
-   *
-   * 关键点：用 (空格位置, 目标块位置) 二元组做 BFS。
-   * 其余所有块都被视为「无差别的杂物」，状态数最多 64×64=4096，
-   * 这样能自然避开「把空格推进死胡同」的陷阱——那正是简单逐格推块会失败的原因。
-   */
-  function bringTile(tile, target, blocked) {
-    const start = board.indexOf(tile);
-    if (start === target) return true;
-
-    const size = T * T;
-    const prevState = new Int32Array(size).fill(-1);
-    const visited = new Uint8Array(size);
-    const queue = new Int32Array(size);
-    let head = 0;
-    let tail = 0;
-
-    const s0 = blank * T + start;
-    visited[s0] = 1;
-    queue[tail++] = s0;
-
-    let goalState = -1;
-    while (head < tail) {
-      const s = queue[head++];
-      const b = (s / T) | 0;
-      const t = s - b * T;
-      if (t === target) { goalState = s; break; }
-
-      // 1) 空格移动到相邻空格（不推动目标块）
-      const nb = neighborsOf(b);
-      for (let i = 0; i < nb.length; i++) {
-        const q = nb[i];
-        if (q === t || frozen[q] || (blocked && blocked[q])) continue;
-        const ns = q * T + t;
-        if (visited[ns]) continue;
-        visited[ns] = 1;
-        prevState[ns] = s;
-        queue[tail++] = ns;
-      }
-
-      // 2) 目标块与空格交换（就是推它一格）
-      const tr = (t / n) | 0;
-      const tc = t % n;
-      const br = (b / n) | 0;
-      const bc = b % n;
-      if ((tr === br && Math.abs(tc - bc) === 1) || (tc === bc && Math.abs(tr - br) === 1)) {
-        const ns = t * T + b; // 新空格 = 原来的块位置
-        if (!visited[ns]) {
-          visited[ns] = 1;
-          prevState[ns] = s;
-          queue[tail++] = ns;
-        }
-      }
-    }
-
-    if (goalState < 0) return false;
-
-    // 回溯出一条状态链，正序执行
-    const chain = [];
-    let s = goalState;
-    while (s !== s0) {
-      chain.push(s);
-      s = prevState[s];
-    }
-    for (let i = chain.length - 1; i >= 0; i--) {
-      const nb = (chain[i] / T) | 0; // 这一步结束后空格所在的格子
-      slide(nb);
-    }
-    return true;
-  }
-
-  /** 剩下的小方块用 BFS 精确求解（3x3 = 181440 个状态，很快）。 */
+  // 收尾的小方块用 BFS 精确求解
   function solveBlockByBFS(L, R) {
     const m = R - L + 1;
     const cells = [];
@@ -939,7 +751,6 @@ function solveConstructive(startBoard, n) {
 
     if (!foundKey) return false;
 
-    // 回溯出移动序列
     const seq = [];
     let key = foundKey;
     while (key !== startKey) {
@@ -963,68 +774,46 @@ function solveConstructive(startBoard, n) {
   let R = n - 1;
 
   while (R - L + 1 > 3) {
-    /* ---- 1. 顶行：先放前 n-2 个 ---- */
+    // 1. 顶行前 n-2 个
     for (let c = L; c <= R - 2; c++) {
       const target = L * n + c;
-      if (!bringTile(target + 1, target, null)) {
-        return fail('construct-row');
-      }
+      if (!bringTile(target + 1, target, null)) return fail('construct-row');
       frozen[target] = 1;
     }
-
-    /* ---- 1b. 顶行最后两格：交给 placeTwo 一起归位 ---- */
+    // 2. 顶行最后两格
     {
-      const a = L * n + (R - 1); // 行尾倒数第二格
-      const b = L * n + R;       // 行尾最后一格
-      if (!placeTwo(a + 1, a, b + 1, b, null)) {
-        return fail('construct-row2');
-      }
+      const a = L * n + (R - 1);
+      const b = L * n + R;
+      if (!placeTwo(a + 1, a, b + 1, b, null)) return fail('construct-row2');
       frozen[a] = 1;
       frozen[b] = 1;
     }
-
-    /* ---- 2. 左列：先放中间那些 ---- */
+    // 3. 左列中间部分
     for (let r = L + 1; r <= R - 2; r++) {
       const target = r * n + L;
-      if (!bringTile(target + 1, target, null)) {
-        return fail('construct-col');
-      }
+      if (!bringTile(target + 1, target, null)) return fail('construct-col');
       frozen[target] = 1;
     }
-
-    /* ---- 2b. 左列最后两格：同样交给 placeTwo ---- */
+    // 4. 左列最后两格
     {
-      const a = (R - 1) * n + L; // 列底倒数第二格
-      const b = R * n + L;       // 列底最后一格
-      if (!placeTwo(a + 1, a, b + 1, b, null)) {
-        return fail('construct-col2');
-      }
+      const a = (R - 1) * n + L;
+      const b = R * n + L;
+      if (!placeTwo(a + 1, a, b + 1, b, null)) return fail('construct-col2');
       frozen[a] = 1;
       frozen[b] = 1;
     }
-
     L++;
   }
 
-  /* ---- 3. 收尾：剩下的 3x3（或 2x2）用 BFS 精确解 ---- */
-  if (!solveBlockByBFS(L, R)) {
-    return fail('construct-block');
-  }
+  if (!solveBlockByBFS(L, R)) return fail('construct-block');
 
-  // 最终校验一遍，确保真的解出来了
-  for (let i = 0; i < T - 1; i++) {
-    if (board[i] !== i + 1) {
-      return fail('construct-verify');
-    }
-  }
-  if (board[T - 1] !== 0) {
-    return fail('construct-verify');
-  }
+  for (let i = 0; i < T - 1; i++) if (board[i] !== i + 1) return fail('construct-verify');
+  if (board[T - 1] !== 0) return fail('construct-verify');
 
   return { ok: true, optimal: false, steps: moves.length, moves: moves, nodes: 0, elapsed: Date.now() - t0 };
 }
 
-/* ---------- Worker 入口 ---------- */
+/* Worker 入口：按 mode 分发 */
 if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typeof window === 'undefined') {
   self.onmessage = function (ev) {
     const data = ev.data || {};
@@ -1046,9 +835,9 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 }
 </script>
 
-<!-- =========================================================
+<!-- ============================================================
      界面逻辑
-     ========================================================= -->
+     ============================================================ -->
 <script>
 (function () {
   'use strict';
@@ -1059,48 +848,11 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
   var solving = false;
   var worker = null;
   var mainSolver = null;
-  var solution = null;      // { steps, moves }
+  var solution = null;
+  var currentSolutionStart = null;
   var animBoard = null;
   var animIndex = 0;
   var playTimer = null;
-
-  /* ---------------- 求解模式 ---------------- */
-
-  function currentMode() {
-    var el = document.querySelector('input[name="mode"]:checked');
-    return el ? el.value : 'optimal';
-  }
-
-  function setMode(m) {
-    var els = document.querySelectorAll('input[name="mode"]');
-    for (var i = 0; i < els.length; i++) els[i].checked = (els[i].value === m);
-    updateModeTip();
-  }
-
-  // 不同阶数默认用不同模式：6 阶以上追求「最优解」没有实际意义
-  function recommendedMode(n) {
-    return n >= 6 ? 'constructive' : 'optimal';
-  }
-
-  function updateModeTip() {
-    var tip = $('#mode-tip');
-    if (!tip) return;
-    var m = currentMode();
-
-    if (m === 'optimal' && N >= 6) {
-      var exp = { 6: 41, 7: 62, 8: 89 }[N] || 89;
-      tip.textContent = '⚠ ' + N + '×' + N + ' 的最优解实际上算不出来（状态数约 10^' + exp + ' 量级），几乎必然超时，建议切到「快速解」。';
-      tip.className = 'mode-tip warn';
-    } else if (m === 'optimal') {
-      tip.textContent = (N <= 4)
-        ? 'IDA* 搜索，返回的一定是理论最少步数。'
-        : '5 阶较难的局面对可能需要几十秒，可以随时点「取消计算」。';
-      tip.className = 'mode-tip';
-    } else {
-      tip.textContent = '逐层构造法：保证给出可行解，但步数比最优解多（通常多 30%~60%）。';
-      tip.className = 'mode-tip';
-    }
-  }
 
   /* ---------------- 基础工具 ---------------- */
 
@@ -1112,7 +864,6 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     return b;
   }
 
-  // 可解性判断：逆序数 + 空格所在行（偶数阶时必须判断）
   function isSolvable(board, n) {
     var tiles = board.filter(function (v) { return v !== 0; });
     var inv = 0;
@@ -1134,6 +885,52 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     var el = $('#status');
     el.textContent = text;
     el.className = 'status' + (kind ? ' is-' + kind : '');
+  }
+
+  function cellFontSize(n) {
+    if (n <= 3) return 26;
+    if (n === 4) return 24;
+    if (n === 5) return 20;
+    if (n === 6) return 17;
+    if (n === 7) return 15;
+    return 13;
+  }
+
+  /* ---------------- 求解模式 ---------------- */
+
+  function currentMode() {
+    var el = document.querySelector('input[name="mode"]:checked');
+    return el ? el.value : 'optimal';
+  }
+
+  function setMode(m) {
+    var els = document.querySelectorAll('input[name="mode"]');
+    for (var i = 0; i < els.length; i++) els[i].checked = (els[i].value === m);
+    updateModeTip();
+  }
+
+  function recommendedMode(n) {
+    return n >= 6 ? 'constructive' : 'optimal';
+  }
+
+  function updateModeTip() {
+    var tip = $('#mode-tip');
+    if (!tip) return;
+    var m = currentMode();
+    if (m === 'optimal' && N >= 6) {
+      var exp = { 6: 41, 7: 62, 8: 89 }[N] || 89;
+      tip.textContent = '提示：' + N + 'x' + N + ' 的最优解实际上算不出来（状态数约 10^' + exp +
+        ' 量级），几乎必然超时，建议切到「快速解」。';
+      tip.className = 'mode-tip warn';
+    } else if (m === 'optimal') {
+      tip.textContent = (N <= 4)
+        ? 'IDA* 搜索，返回的一定是理论最少步数。'
+        : '5 阶较难的局面对可能需要几十秒，可以随时点「取消计算」。';
+      tip.className = 'mode-tip';
+    } else {
+      tip.textContent = '逐层构造法：保证给出可行解，但步数比最优解多（通常多 30%~60%）。';
+      tip.className = 'mode-tip';
+    }
   }
 
   /* ---------------- 输入网格 ---------------- */
@@ -1160,15 +957,6 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     }
   }
 
-  function cellFontSize(n) {
-    if (n <= 3) return 26;
-    if (n === 4) return 24;
-    if (n === 5) return 20;
-    if (n === 6) return 17;
-    if (n === 7) return 15;
-    return 13;
-  }
-
   function onCellInput(e) {
     var el = e.target;
     var cleaned = el.value.replace(/[^\d]/g, '');
@@ -1190,7 +978,6 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
     var j = i + move;
     if (j < 0 || j >= cells.length) return;
-    // 防止左右移动跨行
     if (Math.abs(move) === 1 && Math.floor(j / N) !== Math.floor(i / N)) return;
 
     e.preventDefault();
@@ -1216,36 +1003,21 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
     for (var i = 0; i < T; i++) {
       var raw = String(cells[i].value).trim();
-      if (raw === '') {
-        board[i] = 0;
-        blanks++;
-        continue;
-      }
-      if (!/^\d+$/.test(raw)) {
-        return { error: '第 ' + (i + 1) + ' 格不是有效的数字。' };
-      }
+      if (raw === '') { board[i] = 0; blanks++; continue; }
+      if (!/^\d+$/.test(raw)) return { error: '第 ' + (i + 1) + ' 格不是有效的数字。' };
       var v = parseInt(raw, 10);
       if (v < 0 || v > T - 1) {
         return { error: '第 ' + (i + 1) + ' 格的数字超出范围（应为 0 ~ ' + (T - 1) + '，或留空）。' };
       }
-      if (v === 0) {
-        board[i] = 0;
-        blanks++;
-        continue;
-      }
-      if (seen[v]) {
-        return { error: '数字 ' + v + ' 重复出现了，每个数字只能出现一次。' };
-      }
+      if (v === 0) { board[i] = 0; blanks++; continue; }
+      if (seen[v]) return { error: '数字 ' + v + ' 重复出现了，每个数字只能出现一次。' };
       seen[v] = true;
       board[i] = v;
     }
 
     if (blanks === 0) return { error: '需要留出 1 个空格（填 0 或留空）。' };
     if (blanks > 1) return { error: '空格只能有 1 个，当前有 ' + blanks + ' 个。' };
-
-    for (var k = 1; k < T; k++) {
-      if (!seen[k]) return { error: '缺少数字 ' + k + '。' };
-    }
+    for (var k = 1; k < T; k++) if (!seen[k]) return { error: '缺少数字 ' + k + '。' };
 
     return { board: board };
   }
@@ -1258,14 +1030,12 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     host.style.setProperty('--tile-font', Math.max(10, cellFontSize(N) - 3) + 'px');
     var html = '';
     for (var i = 0; i < board.length; i++) {
-      if (board[i] === 0) {
-        html += '<div class="tile blank"></div>';
-      } else {
-        html += '<div class="tile">' + board[i] + '</div>';
-      }
+      html += board[i] === 0 ? '<div class="tile blank"></div>' : '<div class="tile">' + board[i] + '</div>';
     }
     host.innerHTML = html;
   }
+
+  var ARROW = { up: '\u2191', down: '\u2193', left: '\u2190', right: '\u2192' };
 
   function renderMoves(moves) {
     var host = $('#moves');
@@ -1277,11 +1047,9 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     for (var i = 0; i < moves.length; i++) {
       var mv = moves[i];
       var d = mv.to - mv.from;
-      var arrow = d === -N ? '↑' : d === N ? '↓' : d === -1 ? '←' : '→';
-      html += '<span class="chip" data-i="' + i + '">' +
-        '<span class="chip-index">' + (i + 1) + '</span>' +
-        '<b>' + mv.tile + '</b>' + arrow +
-        '</span>';
+      var arrow = d === -N ? ARROW.up : d === N ? ARROW.down : d === -1 ? ARROW.left : ARROW.right;
+      html += '<span class="chip" data-i="' + i + '"><span class="chip-index">' + (i + 1) +
+        '</span><b>' + mv.tile + '</b>' + arrow + '</span>';
     }
     host.innerHTML = html;
   }
@@ -1292,9 +1060,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     if (current) current.classList.remove('now');
     if (chips[idx]) {
       chips[idx].classList.add('now');
-      if (chips[idx].scrollIntoView) {
-        chips[idx].scrollIntoView({ block: 'nearest', inline: 'nearest' });
-      }
+      if (chips[idx].scrollIntoView) chips[idx].scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
   }
 
@@ -1309,17 +1075,13 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     $('#btn-next').disabled = !on;
   }
 
-  function paintAnimated() {
-    renderPreview(animBoard);
-  }
-
   function stepForward() {
     if (!solution || animIndex >= solution.moves.length) return false;
     var mv = solution.moves[animIndex];
     animBoard[mv.to] = mv.tile;
     animBoard[mv.from] = 0;
     animIndex++;
-    paintAnimated();
+    renderPreview(animBoard);
     updateStepLabel();
     highlightChip(animIndex - 1);
     return true;
@@ -1331,7 +1093,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     var mv = solution.moves[animIndex];
     animBoard[mv.from] = animBoard[mv.to];
     animBoard[mv.to] = 0;
-    paintAnimated();
+    renderPreview(animBoard);
     updateStepLabel();
     highlightChip(animIndex - 1);
     return true;
@@ -1342,30 +1104,24 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
       clearInterval(playTimer);
       playTimer = null;
     }
-    $('#btn-play').textContent = '▶ 播放';
+    $('#btn-play').textContent = '播放';
   }
 
   function togglePlay() {
     if (!solution) return;
-    if (playTimer) {
-      stopPlay();
-      return;
-    }
+    if (playTimer) { stopPlay(); return; }
     if (animIndex >= solution.moves.length) {
-      // 从头开始播放
       animIndex = 0;
       animBoard = currentSolutionStart.slice();
-      paintAnimated();
+      renderPreview(animBoard);
       updateStepLabel();
     }
-    $('#btn-play').textContent = '❚❚ 暂停';
+    $('#btn-play').textContent = '暂停';
     var delay = parseInt($('#speed').value, 10) || 160;
     playTimer = setInterval(function () {
       if (!stepForward()) stopPlay();
     }, delay);
   }
-
-  var currentSolutionStart = null;
 
   function resetResultArea() {
     stopPlay();
@@ -1373,9 +1129,9 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     currentSolutionStart = null;
     animBoard = null;
     animIndex = 0;
-    $('#stat-steps').textContent = '—';
-    $('#stat-nodes').textContent = '—';
-    $('#stat-time').textContent = '—';
+    $('#stat-steps').textContent = '-';
+    $('#stat-nodes').textContent = '-';
+    $('#stat-time').textContent = '-';
     $('#moves').innerHTML = '<span class="muted">尚未计算</span>';
     $('#step-label').textContent = '0 / 0';
     setPlayButtonsEnabled(false);
@@ -1386,7 +1142,6 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
   function getMainThreadSolver() {
     if (!mainSolver) {
       var src = document.getElementById('solver-src').textContent;
-      // 复用同一份求解器源码，在 Worker 不可用时兜底
       mainSolver = new Function(src + '\nreturn { solvePuzzle: solvePuzzle, solveConstructive: solveConstructive };')();
     }
     return mainSolver;
@@ -1407,8 +1162,8 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
   function destroyWorker() {
     if (worker) {
-      try { worker.terminate(); } catch (e) {}
-      try { if (worker.__blobUrl) URL.revokeObjectURL(worker.__blobUrl); } catch (e) {}
+      try { worker.terminate(); } catch (e) { /* ignore */ }
+      try { if (worker.__blobUrl) URL.revokeObjectURL(worker.__blobUrl); } catch (e) { /* ignore */ }
       worker = null;
     }
   }
@@ -1430,18 +1185,13 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
   function applyResult(board, result, mode) {
     var elapsedText = (result.elapsed !== undefined && result.elapsed !== null)
-      ? (result.elapsed / 1000).toFixed(2) + ' s'
-      : '—';
+      ? (result.elapsed / 1000).toFixed(2) + ' s' : '-';
 
     if (!result.ok) {
       var reason = String(result.reason || '');
-
       if (reason === 'time' || reason === 'nodes') {
-        setStatus(
-          '未能在限制内确定最优解（已搜索 ' + fmtNum(result.nodes) + ' 个节点，用时 ' + elapsedText +
-          '）。' + (N >= 6 ? N + '×' + N + ' 请改用「快速解」。' : '可以换一个简单点的局面再试。'),
-          'warn'
-        );
+        setStatus('未能在限制内确定最优解（已搜索 ' + fmtNum(result.nodes) + ' 个节点，用时 ' + elapsedText +
+          '）。' + (N >= 6 ? N + 'x' + N + ' 请改用「快速解」。' : '可以换一个简单点的局面再试。'), 'warn');
         $('#stat-nodes').textContent = fmtNum(result.nodes);
         $('#stat-time').textContent = elapsedText;
       } else if (reason.indexOf('construct') === 0) {
@@ -1453,7 +1203,6 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     }
 
     var optimal = result.optimal === true;
-
     solution = { steps: result.steps, moves: result.moves || [] };
     currentSolutionStart = board.slice();
     animBoard = board.slice();
@@ -1461,7 +1210,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
     $('#stat-steps-k').textContent = optimal ? '最优步数' : '求解步数';
     $('#stat-steps').textContent = fmtNum(result.steps) + ' 步';
-    $('#stat-nodes').textContent = optimal ? fmtNum(result.nodes || 0) : '—';
+    $('#stat-nodes').textContent = optimal ? fmtNum(result.nodes || 0) : '-';
     $('#stat-time').textContent = elapsedText;
 
     renderPreview(animBoard);
@@ -1470,16 +1219,15 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     setPlayButtonsEnabled(solution.moves.length > 0);
 
     if (result.steps === 0) {
-      setStatus('✅ 当前已经是目标局面，无需移动。', 'ok');
+      setStatus('当前已经是目标局面，无需移动。', 'ok');
     } else if (optimal) {
-      setStatus('✅ 已求得最优解：最少需要 ' + result.steps + ' 步（已证明不可能更少）。', 'ok');
+      setStatus('已求得最优解：最少需要 ' + result.steps + ' 步（已证明不可能更少）。', 'ok');
     } else {
-      setStatus('✅ 已求出一个可行解：共 ' + result.steps + ' 步。构造法不保证步数最少。', 'ok');
+      setStatus('已求出一个可行解：共 ' + result.steps + ' 步。构造法不保证步数最少。', 'ok');
     }
   }
 
   function runSolveSync(board, mode) {
-    // 让浏览器先把「计算中」画出来，再进入同步计算
     setTimeout(function () {
       try {
         var solver = getMainThreadSolver();
@@ -1498,11 +1246,11 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
   function runSolve(board, mode) {
     setSolving(true);
-    setStatus(mode === 'constructive' ? '正在用构造法求解…' : '正在计算最优解…', 'busy');
+    setStatus(mode === 'constructive' ? '正在用构造法求解...' : '正在计算最优解...', 'busy');
 
     var w = tryCreateWorker();
     if (!w) {
-      setStatus('当前环境不支持后台线程，正在主线程计算（界面会暂时无响应）…', 'busy');
+      setStatus('当前环境不支持后台线程，正在主线程计算（界面会暂时无响应）...', 'busy');
       runSolveSync(board, mode);
       return;
     }
@@ -1514,12 +1262,8 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
       var msg = ev.data || {};
       if (msg.type === 'progress' && mode !== 'constructive') {
         var p = msg.progress || {};
-        setStatus(
-          '正在搜索… 节点 ' + fmtNum(p.nodes || 0) +
-          ' · 当前步数下界 ' + (p.bound || 0) +
-          ' · ' + ((performance.now() - startedAt) / 1000).toFixed(1) + ' s',
-          'busy'
-        );
+        setStatus('正在搜索... 节点 ' + fmtNum(p.nodes || 0) + ' · 当前步数下界 ' + (p.bound || 0) +
+          ' · ' + ((performance.now() - startedAt) / 1000).toFixed(1) + ' s', 'busy');
       } else if (msg.type === 'done') {
         destroyWorker();
         setSolving(false);
@@ -1532,9 +1276,8 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     };
 
     w.onerror = function () {
-      // Worker 启动失败（例如本地 file:// 限制），退回主线程
       destroyWorker();
-      setStatus('后台线程不可用，正在主线程计算（界面会暂时无响应）…', 'busy');
+      setStatus('后台线程不可用，正在主线程计算（界面会暂时无响应）...', 'busy');
       runSolveSync(board, mode);
     };
 
@@ -1549,7 +1292,6 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
   function onSolveClick() {
     if (solving) {
-      // 取消
       destroyWorker();
       setSolving(false);
       setStatus('已取消计算。', 'warn');
@@ -1557,18 +1299,11 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     }
 
     var r = readBoard();
-    if (r.error) {
-      setStatus(r.error, 'err');
-      return;
-    }
-
+    if (r.error) { setStatus(r.error, 'err'); return; }
     var board = r.board;
 
     if (!isSolvable(board, N)) {
-      setStatus(
-        '该局面无解：数字排列的逆序数与空格位置不满足可解条件（这是华容道中不可能通过滑动达到的状态）。',
-        'err'
-      );
+      setStatus('该局面无解：数字排列的逆序数与空格位置不满足可解条件（华容道中不可能通过滑动达到的状态）。', 'err');
       return;
     }
 
@@ -1600,25 +1335,839 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
       blank = nb;
     }
 
-    // 打乱后若又回到目标局面，重新来一次
+    var g = goalBoard(n);
     var solved = true;
-    for (var k = 0; k < b.length; k++) {
-      if (b[k] !== goalBoard(n)[k]) { solved = false; break; }
+    for (var k = 0; k < b.length; k++) if (b[k] !== g[k]) { solved = false; break; }
+    return solved ? shuffleBoard(n) : b;
+  }
+
+  /* ============================================================
+     图片识别：把盘面截图识别成数字排列
+       - 有参考原图：NCC 相似度 + 匈牙利算法匹配
+       - 只有截图  ：边缘拼接（QAP + 模拟退火 + 迭代局部搜索）
+     核心逻辑是纯函数，只依赖像素数组
+     ============================================================ */
+
+  /* #region RECOG */
+
+  // 用边缘能量拟合等距网格
+  function rgcFitAxis(energy, total, n) {
+    var best = { score: -1, off: 0, cell: total / n };
+    var base = total / n;
+    for (var cell = base * 0.78; cell <= base * 1.22; cell += 1) {
+      var span = cell * n;
+      if (span > total) continue;
+      var maxOff = Math.floor(total - span);
+      for (var off = 0; off <= maxOff; off += 1) {
+        var s = 0;
+        for (var k = 0; k <= n; k++) {
+          var x = Math.round(off + k * cell);
+          var m = 0;
+          for (var d = -1; d <= 1; d++) {
+            var xx = x + d;
+            if (xx >= 0 && xx < energy.length && energy[xx] > m) m = energy[xx];
+          }
+          s += m;
+        }
+        if (s > best.score) { best.score = s; best.off = off; best.cell = cell; }
+      }
     }
-    if (solved) return shuffleBoard(n);
-    return b;
+    return best;
   }
 
-  /* ---------------- 初始化与事件绑定 ---------------- */
-
-  function changeSize(n) {
-    N = n;
-    buildGrid(n);
-    setBoard(goalBoard(n));
-    resetResultArea();
-    renderPreview(goalBoard(n));
-    setStatus('等待输入局面…');
+  // 区域重采样（面积平均），输出 RGB 浮点数组
+  function rgcResample(px, W, H, sx, sy, sw, sh, TS) {
+    var out = new Float32Array(TS * TS * 3);
+    var xr = sw / TS, yr = sh / TS;
+    for (var ty = 0; ty < TS; ty++) {
+      var y0 = sy + ty * yr;
+      var iy0 = Math.max(0, Math.floor(y0));
+      var iy1 = Math.min(H, Math.ceil(y0 + yr));
+      for (var tx = 0; tx < TS; tx++) {
+        var x0 = sx + tx * xr;
+        var ix0 = Math.max(0, Math.floor(x0));
+        var ix1 = Math.min(W, Math.ceil(x0 + xr));
+        var r = 0, g = 0, b = 0, cnt = 0;
+        for (var y = iy0; y < iy1; y++) {
+          var row = y * W;
+          for (var x = ix0; x < ix1; x++) {
+            var p = (row + x) * 4;
+            r += px[p]; g += px[p + 1]; b += px[p + 2]; cnt++;
+          }
+        }
+        var o = (ty * TS + tx) * 3;
+        if (cnt) { out[o] = r / cnt; out[o + 1] = g / cnt; out[o + 2] = b / cnt; }
+      }
+    }
+    return out;
   }
+
+  function rgcGrayThumb(tile, TS, S) {
+    var out = new Float32Array(S * S);
+    var r = TS / S;
+    for (var ty = 0; ty < S; ty++) {
+      for (var tx = 0; tx < S; tx++) {
+        var ya = Math.floor(ty * r), yb = Math.min(TS, Math.ceil((ty + 1) * r));
+        var xa = Math.floor(tx * r), xb = Math.min(TS, Math.ceil((tx + 1) * r));
+        var sum = 0, cnt = 0;
+        for (var y = ya; y < yb; y++) {
+          for (var x = xa; x < xb; x++) {
+            var o = (y * TS + x) * 3;
+            sum += (tile[o] + tile[o + 1] + tile[o + 2]) / 3;
+            cnt++;
+          }
+        }
+        out[ty * S + tx] = cnt ? sum / cnt : 0;
+      }
+    }
+    return out;
+  }
+
+  function rgcNcc(a, b) {
+    var n = a.length, i, sa = 0, sb = 0;
+    for (i = 0; i < n; i++) { sa += a[i]; sb += b[i]; }
+    var ma = sa / n, mb = sb / n, num = 0, da = 0, db = 0;
+    for (i = 0; i < n; i++) {
+      var u = a[i] - ma, v = b[i] - mb;
+      num += u * v; da += u * u; db += v * v;
+    }
+    var den = Math.sqrt(da * db);
+    return den > 1e-9 ? num / den : 0;
+  }
+
+  // 匈牙利算法（最小代价完美匹配）
+  function rgcHungarian(cost) {
+    var n = cost.length, INF = 1e15;
+    var u = new Float64Array(n + 1), v = new Float64Array(n + 1);
+    var p = new Int32Array(n + 1), way = new Int32Array(n + 1);
+    for (var i = 1; i <= n; i++) {
+      p[0] = i;
+      var j0 = 0;
+      var minv = new Float64Array(n + 1);
+      var used = new Uint8Array(n + 1);
+      for (var j = 0; j <= n; j++) minv[j] = INF;
+      do {
+        used[j0] = 1;
+        var i0 = p[j0], delta = INF, j1 = 0;
+        for (var jj = 1; jj <= n; jj++) {
+          if (used[jj]) continue;
+          var cur = cost[i0 - 1][jj - 1] - u[i0] - v[jj];
+          if (cur < minv[jj]) { minv[jj] = cur; way[jj] = j0; }
+          if (minv[jj] < delta) { delta = minv[jj]; j1 = jj; }
+        }
+        for (var j2 = 0; j2 <= n; j2++) {
+          if (used[j2]) { u[p[j2]] += delta; v[j2] -= delta; }
+          else minv[j2] -= delta;
+        }
+        j0 = j1;
+      } while (p[j0] !== 0);
+      while (j0) {
+        var j3 = way[j0];
+        p[j0] = p[j3];
+        j0 = j3;
+      }
+    }
+    var ans = new Int32Array(n);
+    for (var j4 = 1; j4 <= n; j4++) if (p[j4] > 0) ans[p[j4] - 1] = j4 - 1;
+    return ans;
+  }
+
+  function rgcStrip(tile, TS, side, EW) {
+    var out = new Float32Array(TS * EW * 3);
+    var k = 0;
+    for (var i = 0; i < TS; i++) {
+      for (var j = 0; j < EW; j++) {
+        var x, y;
+        if (side === 'r') { x = TS - EW + j; y = i; }
+        else if (side === 'l') { x = j; y = i; }
+        else if (side === 'b') { y = TS - EW + j; x = i; }
+        else { y = j; x = i; }
+        var o = (y * TS + x) * 3;
+        out[k++] = tile[o]; out[k++] = tile[o + 1]; out[k++] = tile[o + 2];
+      }
+    }
+    return out;
+  }
+
+  function rgcEdgeCost(a, b) {
+    var s = 0, n = a.length;
+    for (var i = 0; i < n; i++) {
+      var d = a[i] - b[i];
+      s += d * d;
+    }
+    return s / n;
+  }
+
+  function rgcSolvable(board, n) {
+    var t = [], i;
+    for (i = 0; i < board.length; i++) if (board[i] !== 0) t.push(board[i]);
+    var inv = 0;
+    for (i = 0; i < t.length; i++) {
+      for (var j = i + 1; j < t.length; j++) if (t[i] > t[j]) inv++;
+    }
+    if (n % 2) return inv % 2 === 0;
+    var blankRowFromBottom = n - Math.floor(board.indexOf(0) / n);
+    return (inv + blankRowFromBottom) % 2 === 1;
+  }
+
+  // 摆放优化：贪心初值 + 模拟退火 + 2-opt + 迭代局部搜索
+  function rgcPlace(costH, costV, n) {
+    var NT = n * n, hole = NT - 1;
+    var mov = [];
+    for (var i = 0; i < NT; i++) if (i !== hole) mov.push(i);
+    var nt = mov.length;
+
+    var nbs = [];
+    for (var sl = 0; sl < NT; sl++) {
+      var r = (sl / n) | 0, c = sl % n, arr = [];
+      if (r > 0) arr.push(sl - n);
+      if (r < n - 1) arr.push(sl + n);
+      if (c > 0) arr.push(sl - 1);
+      if (c < n - 1) arr.push(sl + 1);
+      nbs.push(arr);
+    }
+
+    var sum = 0, cnt = 0;
+    for (var a1 = 0; a1 < nt; a1++) {
+      for (var b1 = 0; b1 < nt; b1++) {
+        if (a1 === b1) continue;
+        sum += costH[a1][b1] + costV[a1][b1];
+        cnt += 2;
+      }
+    }
+    var scale = cnt ? sum / cnt : 1;
+    if (!(scale > 1e-6)) scale = 1;
+
+    var pairSet = [];
+    for (var pp = 0; pp < nt; pp++) pairSet.push(new Array(nt));
+    for (var p0 = 0; p0 < nt; p0++) {
+      for (var q0 = p0 + 1; q0 < nt; q0++) {
+        var sp0 = mov[p0], sq0 = mov[q0];
+        var set0 = [sp0, sq0];
+        for (var t0 = 0; t0 < nbs[sp0].length; t0++) set0.push(nbs[sp0][t0]);
+        for (var t1 = 0; t1 < nbs[sq0].length; t1++) set0.push(nbs[sq0][t1]);
+        pairSet[p0][q0] = pairSet[q0][p0] = set0;
+      }
+    }
+
+    function localCost(perm, set) {
+      var s = 0;
+      for (var i2 = 0; i2 < set.length; i2++) {
+        var sl2 = set[i2], t = perm[sl2];
+        if (t < 0) continue;
+        var r2 = (sl2 / n) | 0, c2 = sl2 % n;
+        if (c2 + 1 < n && perm[sl2 + 1] >= 0) s += costH[t][perm[sl2 + 1]];
+        if (r2 + 1 < n && perm[sl2 + n] >= 0) s += costV[t][perm[sl2 + n]];
+      }
+      return s;
+    }
+
+    var allSlots = [];
+    for (var i3 = 0; i3 < NT; i3++) allSlots.push(i3);
+    function totalCost(perm) { return localCost(perm, allSlots); }
+
+    function polish(perm) {
+      var improved = true, guard = 0;
+      while (improved && guard++ < 40) {
+        improved = false;
+        for (var p = 0; p < nt; p++) {
+          for (var q = p + 1; q < nt; q++) {
+            var sp = mov[p], sq = mov[q];
+            var set = pairSet[p][q];
+            var before = localCost(perm, set);
+            var tp = perm[sp], tq = perm[sq];
+            perm[sp] = tq; perm[sq] = tp;
+            var after = localCost(perm, set);
+            if (after < before - 1e-9) improved = true;
+            else { perm[sp] = tp; perm[sq] = tq; }
+          }
+        }
+      }
+    }
+
+    // 更强的局部优化：两两交换 + 三循环（能跳出只靠交换到不了的局部最优）
+    var tripleSets = [];
+    function ensureTripleSlots() {
+      if (tripleSets.length) return;
+      for (var i0 = 0; i0 < nt; i0++) {
+        tripleSets.push([]);
+        for (var i1 = 0; i1 < nt; i1++) tripleSets[i0].push([]);
+      }
+    }
+    function getTripleSet(a, b, c) {
+      var set = pairSet[a][b].slice();
+      var i, x;
+      var more = pairSet[b][c].concat(pairSet[a][c]);
+      for (i = 0; i < more.length; i++) set.push(more[i]);
+      var seen = Object.create(null), out = [];
+      for (i = 0; i < set.length; i++) {
+        x = set[i];
+        if (!seen[x]) { seen[x] = 1; out.push(x); }
+      }
+      return out;
+    }
+    function polish3(perm) {
+      ensureTripleSlots();
+      polish(perm);
+      var improved = true, guard = 0;
+      while (improved && guard++ < 12) {
+        improved = false;
+        for (var a = 0; a < nt; a++) {
+          for (var b = a + 1; b < nt; b++) {
+            for (var c = b + 1; c < nt; c++) {
+              if (!tripleSets[a][b][c]) tripleSets[a][b][c] = getTripleSet(a, b, c);
+              var set = tripleSets[a][b][c];
+              var sa = mov[a], sb = mov[b], sc2 = mov[c];
+              var before = localCost(perm, set);
+              var va = perm[sa], vb = perm[sb], vc = perm[sc2];
+
+              perm[sa] = vb; perm[sb] = vc; perm[sc2] = va;
+              if (localCost(perm, set) < before - 1e-9) { improved = true; continue; }
+
+              perm[sa] = vc; perm[sb] = va; perm[sc2] = vb;
+              if (localCost(perm, set) < before - 1e-9) { improved = true; continue; }
+
+              perm[sa] = va; perm[sb] = vb; perm[sc2] = vc;
+            }
+          }
+        }
+        if (improved) polish(perm);
+      }
+    }
+
+    function greedyInit() {
+      var perm = new Int32Array(NT).fill(-1);
+      var used = new Array(nt).fill(false);
+      for (var sl = 0; sl < NT - 1; sl++) {
+        var r = (sl / n) | 0, c = sl % n;
+        var leftT = c > 0 ? perm[sl - 1] : -1;
+        var upT = r > 0 ? perm[sl - n] : -1;
+        var best = -1, bv = Infinity;
+        for (var t = 0; t < nt; t++) {
+          if (used[t]) continue;
+          var v = 0;
+          if (leftT >= 0) v += costH[leftT][t];
+          if (upT >= 0) v += costV[upT][t];
+          if (v < bv) { bv = v; best = t; }
+        }
+        perm[sl] = best;
+        used[best] = true;
+      }
+      return perm;
+    }
+
+    var bestPerm = null, bestCost = Infinity;
+    var trials = 16;
+    for (var trial = 0; trial < trials; trial++) {
+      var perm;
+      if (trial === 0) {
+        perm = greedyInit();
+      } else {
+        perm = new Int32Array(NT).fill(-1);
+        var order = [];
+        for (var k = 0; k < nt; k++) order.push(k);
+        for (var s2 = nt - 1; s2 > 0; s2--) {
+          var r2 = (Math.random() * (s2 + 1)) | 0;
+          var tmp = order[s2]; order[s2] = order[r2]; order[r2] = tmp;
+        }
+        for (var k2 = 0; k2 < nt; k2++) perm[mov[k2]] = order[k2];
+      }
+
+      var iters = 40000;
+      var T0 = 3.0, T1 = 0.02;
+      for (var it = 0; it < iters; it++) {
+        var T = T0 * Math.pow(T1 / T0, it / iters);
+        var pa = (Math.random() * nt) | 0;
+        var pb = (Math.random() * nt) | 0;
+        if (pa === pb) continue;
+        var sp2 = mov[pa], sq2 = mov[pb];
+        var set2 = pairSet[pa][pb];
+        var before2 = localCost(perm, set2) / scale;
+        var ta = perm[sp2], tb = perm[sq2];
+        perm[sp2] = tb; perm[sq2] = ta;
+        var after2 = localCost(perm, set2) / scale;
+        var d = after2 - before2;
+        if (!(d <= 0 || Math.random() < Math.exp(-d / T))) {
+          perm[sp2] = ta;
+          perm[sq2] = tb;
+        }
+      }
+      polish(perm);
+      var finalCost = totalCost(perm);
+      if (finalCost < bestCost) { bestCost = finalCost; bestPerm = perm.slice(); }
+    }
+
+    var candidates = [{ perm: bestPerm.slice(), cost: bestCost }];
+    var cur = bestPerm.slice();
+    polish(cur);
+    var curC = totalCost(cur);
+    candidates.push({ perm: cur.slice(), cost: curC });
+    for (var rnd = 0; rnd < 900; rnd++) {
+      var cand = cur.slice();
+      var kicks = 2 + ((Math.random() * 3) | 0);
+      for (var k5 = 0; k5 < kicks; k5++) {
+        var p5 = (Math.random() * nt) | 0;
+        var q5 = (Math.random() * nt) | 0;
+        if (p5 === q5) continue;
+        var s5 = mov[p5], t5 = mov[q5];
+        var tmp5 = cand[s5]; cand[s5] = cand[t5]; cand[t5] = tmp5;
+      }
+      polish(cand);
+      var cc = totalCost(cand);
+      candidates.push({ perm: cand.slice(), cost: cc });
+      if (cc < curC - 1e-9) { cur = cand; curC = cc; }
+      if (cc < bestCost) { bestCost = cc; bestPerm = cand.slice(); }
+    }
+
+    candidates.sort(function (A, B) { return A.cost - B.cost; });
+
+    // 对最靠前的几个候选做更强的三循环优化
+    var topN = Math.min(candidates.length, 6);
+    for (var ti = 0; ti < topN; ti++) {
+      var pc = candidates[ti].perm.slice();
+      polish3(pc);
+      candidates[ti] = { perm: pc, cost: totalCost(pc) };
+    }
+    candidates.sort(function (A, B) { return A.cost - B.cost; });
+
+    var topPerm = candidates[0].perm;
+    return { perm: topPerm, cost: candidates[0].cost, candidates: candidates.slice(0, 40) };
+  }
+
+  /**
+   * 主识别函数
+   * @param shot {px,w,h} 截图 RGBA 像素
+   * @param n 阶数
+   * @param ref  {px,w,h} 参考原图（可为 null）
+   */
+  function recognizeFromPixels(shot, n, ref) {
+    var px = shot.px, W = shot.w, H = shot.h;
+    var x, y, p0, p1, a0, a1;
+
+    // 1. 边缘能量
+    var ex = new Float64Array(W);
+    var ey = new Float64Array(H);
+    for (y = 0; y < H; y++) {
+      var rowBase = y * W * 4;
+      for (x = 0; x < W - 1; x++) {
+        p0 = rowBase + x * 4; p1 = p0 + 4;
+        a0 = px[p0] + px[p0 + 1] + px[p0 + 2];
+        a1 = px[p1] + px[p1 + 1] + px[p1 + 2];
+        ex[x] += Math.abs(a1 - a0);
+      }
+    }
+    for (x = 0; x < W; x++) {
+      for (y = 0; y < H - 1; y++) {
+        p0 = (y * W + x) * 4; p1 = p0 + W * 4;
+        a0 = px[p0] + px[p0 + 1] + px[p0 + 2];
+        a1 = px[p1] + px[p1 + 1] + px[p1 + 2];
+        ey[y] += Math.abs(a1 - a0);
+      }
+    }
+
+    var fitX = rgcFitAxis(ex, W, n);
+    var fitY = rgcFitAxis(ey, H, n);
+
+    // 2. 切格
+    var TS = Math.max(64, Math.min(256, Math.round(Math.min(fitX.cell, fitY.cell))));
+    var inset = Math.max(1, Math.round(TS * 0.008));
+    var tiles = [];
+    var stds = [];
+    var NT = n * n;
+
+    for (var r = 0; r < n; r++) {
+      for (var c = 0; c < n; c++) {
+        var sx = Math.round(fitX.off + c * fitX.cell) + inset;
+        var sy = Math.round(fitY.off + r * fitY.cell) + inset;
+        var sw = Math.max(4, Math.round(fitX.cell) - inset * 2);
+        var sh = Math.max(4, Math.round(fitY.cell) - inset * 2);
+        var tile = rgcResample(px, W, H, sx, sy, sw, sh, TS);
+        tiles.push(tile);
+        var mean = 0, sq = 0;
+        for (var i2 = 0; i2 < tile.length; i2 += 3) {
+          var g = (tile[i2] + tile[i2 + 1] + tile[i2 + 2]) / 3;
+          mean += g; sq += g * g;
+        }
+        var m = mean / (TS * TS);
+        var v = sq / (TS * TS) - m * m;
+        stds.push(Math.sqrt(v > 0 ? v : 0));
+      }
+    }
+
+    // 空格 = 最平的格子
+    var blank = 0, bestScore = Infinity;
+    for (var i3 = 0; i3 < NT; i3++) {
+      var score = stds[i3] < 3 ? stds[i3] - 100 : stds[i3];
+      if (score < bestScore) { bestScore = score; blank = i3; }
+    }
+
+    var tileIdx = [];
+    for (var i4 = 0; i4 < NT; i4++) if (i4 !== blank) tileIdx.push(i4);
+    var tn = tileIdx.length;
+
+    // 3A. 有参考图
+    if (ref && ref.px) {
+      var S = 24;
+      var th = [];
+      for (var i5 = 0; i5 < tn; i5++) th.push(rgcGrayThumb(tiles[tileIdx[i5]], TS, S));
+
+      var RW = ref.w, RH = ref.h;
+      var side = Math.min(RW, RH);
+      var crops = [
+        { x: 0, y: 0, w: RW, h: RH, tag: 'stretch' },
+        { x: (RW - side) / 2, y: (RH - side) / 2, w: side, h: side, tag: 'square' }
+      ];
+      var cands = [];
+      for (var ci = 0; ci < crops.length; ci++) {
+        var cp = crops[ci];
+        var goalThumbs = [];
+        for (var gr = 0; gr < n && goalThumbs.length < NT - 1; gr++) {
+          for (var gc = 0; gc < n && goalThumbs.length < NT - 1; gc++) {
+            var gx = cp.x + gc * cp.w / n;
+            var gy = cp.y + gr * cp.h / n;
+            var gt = rgcResample(ref.px, RW, RH, gx, gy, cp.w / n, cp.h / n, TS);
+            goalThumbs.push(rgcGrayThumb(gt, TS, S));
+          }
+        }
+        if (goalThumbs.length < tn) continue;
+
+        var cost = [];
+        for (var a = 0; a < tn; a++) {
+          var line = new Array(tn);
+          for (var b = 0; b < tn; b++) line[b] = -rgcNcc(th[a], goalThumbs[b]);
+          cost.push(line);
+        }
+        var asg = rgcHungarian(cost);
+        var tot = 0;
+        for (var a2 = 0; a2 < tn; a2++) tot += -cost[a2][asg[a2]];
+        cands.push({ tag: cp.tag, asg: asg, score: tot / tn });
+      }
+      if (cands.length) {
+        cands.sort(function (A, B) { return B.score - A.score; });
+        var bestRef = cands[0];
+        var boardR = new Array(NT);
+        for (var i6 = 0; i6 < NT; i6++) boardR[i6] = 0;
+        for (var i7 = 0; i7 < tn; i7++) boardR[tileIdx[i7]] = bestRef.asg[i7] + 1;
+        return {
+          board: boardR, blank: blank, TN: tn,
+          grid: { x0: fitX.off, y0: fitY.off, cw: fitX.cell, ch: fitY.cell },
+          conf: bestRef.score, mode: 'ref', crop: bestRef.tag
+        };
+      }
+    }
+
+    // 3B. 边缘拼接
+    var EW = Math.max(1, Math.round(TS * 0.012));
+    var strips = [];
+    for (var i8 = 0; i8 < tn; i8++) {
+      var t8 = tiles[tileIdx[i8]];
+      strips.push({
+        r: rgcStrip(t8, TS, 'r', EW),
+        l: rgcStrip(t8, TS, 'l', EW),
+        b: rgcStrip(t8, TS, 'b', EW),
+        t: rgcStrip(t8, TS, 't', EW)
+      });
+    }
+
+    // costH[左][右] = 左块右边缘 与 右块左边缘 的差异
+    var costH = [], costV = [];
+    for (var j = 0; j < tn; j++) {
+      costH.push(new Float64Array(tn));
+      costV.push(new Float64Array(tn));
+    }
+    for (var j2 = 0; j2 < tn; j2++) {
+      for (var i9 = 0; i9 < tn; i9++) {
+        if (i9 === j2) { costH[j2][i9] = 1e12; costV[j2][i9] = 1e12; continue; }
+        costH[i9][j2] = rgcEdgeCost(strips[i9].r, strips[j2].l);
+        costV[i9][j2] = rgcEdgeCost(strips[i9].b, strips[j2].t);
+      }
+    }
+
+    function makeBoard(pm) {
+      var bd = new Array(NT);
+      for (var z0 = 0; z0 < NT; z0++) bd[z0] = 0;
+      for (var z1 = 0; z1 < NT; z1++) {
+        if (pm[z1] < 0) continue;
+        bd[tileIdx[pm[z1]]] = z1 + 1;
+      }
+      return bd;
+    }
+
+    function totalOf(pm) {
+      var s = 0;
+      for (var sl = 0; sl < NT; sl++) {
+        var t = pm[sl];
+        if (t < 0) continue;
+        var r = (sl / n) | 0, c = sl % n;
+        if (c + 1 < n && pm[sl + 1] >= 0) s += costH[t][pm[sl + 1]];
+        if (r + 1 < n && pm[sl + n] >= 0) s += costV[t][pm[sl + n]];
+      }
+      return s;
+    }
+
+    // 真实局面一定可解：多次独立搜索，取「可解且代价最低」的结果
+    var board2 = null;
+    var perm = null;
+    var bestSolCost = Infinity;
+    var attempts = 3;
+    for (var at = 0; at < 2; at++) {
+      var placed = rgcPlace(costH, costV, n);
+      var cs = placed.candidates && placed.candidates.length
+        ? placed.candidates : [{ perm: placed.perm, cost: placed.cost }];
+      for (var ci2 = 0; ci2 < cs.length; ci2++) {
+        var pm = cs[ci2].perm;
+        var bd = makeBoard(pm);
+        if (!rgcSolvable(bd, n)) continue;
+        var cst = totalOf(pm);
+        if (cst < bestSolCost) { bestSolCost = cst; board2 = bd; perm = pm; }
+        break; // 本次尝试里最优的可解候选（候选已按代价排序）
+      }
+    }
+
+    // 一次可解候选都没找到：做「代价最小的单次交换」把奇偶性修正过来
+    if (!board2) {
+      var placed2 = rgcPlace(costH, costV, n);
+      var base = placed2.perm;
+      var slots = [];
+      for (var s5 = 0; s5 < NT; s5++) if (base[s5] >= 0) slots.push(s5);
+      var bestFix = null, bestFixCost = Infinity;
+      for (var f1 = 0; f1 < slots.length; f1++) {
+        for (var f2 = f1 + 1; f2 < slots.length; f2++) {
+          var trial = base.slice();
+          var sa = slots[f1], sb = slots[f2];
+          var tv = trial[sa]; trial[sa] = trial[sb]; trial[sb] = tv;
+          var tbd = makeBoard(trial);
+          if (!rgcSolvable(tbd, n)) continue;
+          var tc = totalOf(trial);
+          if (tc < bestFixCost) { bestFixCost = tc; bestFix = trial; board2 = tbd; }
+        }
+      }
+      perm = bestFix || base;
+      if (!board2) board2 = makeBoard(perm);
+    }
+
+    var hit = 0, tot2 = 0;
+    for (var sl3 = 0; sl3 < NT; sl3++) {
+      var tt = perm[sl3];
+      if (tt < 0) continue;
+      var rr3 = (sl3 / n) | 0, cc3 = sl3 % n;
+      if (cc3 + 1 < n && perm[sl3 + 1] >= 0) {
+        tot2++;
+        var nbT = perm[sl3 + 1], bv = costH[tt][nbT], isBest = true;
+        for (var k3 = 0; k3 < tn; k3++) if (k3 !== tt && costH[tt][k3] < bv - 1e-9) { isBest = false; break; }
+        if (isBest) hit++;
+      }
+      if (rr3 + 1 < n && perm[sl3 + n] >= 0) {
+        tot2++;
+        var nbT2 = perm[sl3 + n], bv2 = costV[tt][nbT2], isBest2 = true;
+        for (var k4 = 0; k4 < tn; k4++) if (k4 !== tt && costV[tt][k4] < bv2 - 1e-9) { isBest2 = false; break; }
+        if (isBest2) hit++;
+      }
+    }
+
+    return {
+      board: board2, blank: blank, TN: tn,
+      grid: { x0: fitX.off, y0: fitY.off, cw: fitX.cell, ch: fitY.cell },
+      conf: tot2 ? hit / tot2 : 0, mode: 'edge', hits: hit, total: tot2
+    };
+  }
+
+  /* #endregion RECOG */
+
+  /* ---------------- 图片上传 / 粘贴 / 识别流程 ---------------- */
+
+  var IMG = { shot: null, ref: null, pasteTarget: 'shot', busy: false };
+
+  // 鼠标悬停（或键盘聚焦）即可切换粘贴目标，不需要点击
+  function setPasteTarget(slot) {
+    if (IMG.pasteTarget === slot) return;
+    IMG.pasteTarget = slot;
+    updatePasteTargetUI();
+  }
+
+  // 取消选中：两个框都不高亮，粘贴时回落到默认的「局面截图」
+  function clearPasteTarget() {
+    if (IMG.pasteTarget === null) return;
+    IMG.pasteTarget = null;
+    updatePasteTargetUI();
+  }
+
+  function updatePasteTargetUI() {
+    ['shot', 'ref'].forEach(function (s) {
+      var box = document.getElementById('drop-' + s);
+      if (box) box.classList.toggle('paste-target', IMG.pasteTarget === s);
+    });
+  }
+
+  function loadImageFile(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file || !/^image\//.test(file.type || '')) {
+        reject(new Error('不是有效的图片文件'));
+        return;
+      }
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function () { resolve({ el: img, url: url }); };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('图片解码失败')); };
+      img.src = url;
+    });
+  }
+
+  function imageToPixels(img, maxSide) {
+    var iw = img.naturalWidth || img.width;
+    var ih = img.naturalHeight || img.height;
+    var sc = Math.min(1, maxSide / Math.max(iw, ih));
+    var W = Math.max(8, Math.round(iw * sc));
+    var H = Math.max(8, Math.round(ih * sc));
+    var cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    var ctx = cv.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, W, H);
+    return { px: ctx.getImageData(0, 0, W, H).data, w: W, h: H, canvas: cv };
+  }
+
+  function setRecogStatus(text, kind) {
+    var el = $('#recog-status');
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'recog-status' + (kind ? ' is-' + kind : '');
+  }
+
+  function updateDropThumb(slot) {
+    var box = document.getElementById('drop-' + slot);
+    if (!box) return;
+    var thumb = box.querySelector('.drop-thumb');
+    var obj = IMG[slot];
+    if (obj && obj.url) {
+      thumb.style.backgroundImage = 'url("' + obj.url + '")';
+      thumb.hidden = false;
+      box.classList.add('has-img');
+    } else {
+      thumb.style.backgroundImage = '';
+      thumb.hidden = true;
+      box.classList.remove('has-img');
+    }
+  }
+
+  function drawDetectPreview(res, shotPixels) {
+    var cv = $('#pv-detect');
+    if (!cv || !shotPixels) return;
+    var S = 220;
+    cv.width = S; cv.height = S;
+    var ctx = cv.getContext('2d');
+    ctx.clearRect(0, 0, S, S);
+
+    var iw = shotPixels.w, ih = shotPixels.h;
+    var sc = Math.min(S / iw, S / ih);
+    var dw = iw * sc, dh = ih * sc;
+    var ox = (S - dw) / 2, oy = (S - dh) / 2;
+    ctx.drawImage(shotPixels.canvas, 0, 0, iw, ih, ox, oy, dw, dh);
+
+    var g = res.grid, n = N;
+    ctx.strokeStyle = 'rgba(79,140,255,.95)';
+    ctx.lineWidth = 1.5;
+    for (var k = 0; k <= n; k++) {
+      var gx = ox + (g.x0 + k * g.cw) * sc;
+      var gy = oy + (g.y0 + k * g.ch) * sc;
+      ctx.beginPath();
+      ctx.moveTo(gx, oy + g.y0 * sc);
+      ctx.lineTo(gx, oy + (g.y0 + n * g.ch) * sc);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(ox + g.x0 * sc, gy);
+      ctx.lineTo(ox + (g.x0 + n * g.cw) * sc, gy);
+      ctx.stroke();
+    }
+
+    var br = (res.blank / n) | 0, bc = res.blank % n;
+    ctx.fillStyle = 'rgba(240,165,62,.32)';
+    ctx.fillRect(ox + (g.x0 + bc * g.cw) * sc, oy + (g.y0 + br * g.ch) * sc, g.cw * sc, g.ch * sc);
+    ctx.strokeStyle = 'rgba(240,165,62,1)';
+    ctx.strokeRect(ox + (g.x0 + bc * g.cw) * sc + 0.5, oy + (g.y0 + br * g.ch) * sc + 0.5,
+      Math.max(1, g.cw * sc - 1), Math.max(1, g.ch * sc - 1));
+  }
+
+  function drawReconPreview(res, shotPixels) {
+    var cv = $('#pv-recon');
+    if (!cv || !shotPixels) return;
+    var S = 220, n = N;
+    var cell = Math.floor(S / n);
+    cv.width = cell * n;
+    cv.height = cell * n;
+    var ctx = cv.getContext('2d');
+    ctx.fillStyle = '#0e1117';
+    ctx.fillRect(0, 0, cv.width, cv.height);
+
+    var g = res.grid;
+    var img = shotPixels.canvas;
+    for (var slot = 0; slot < n * n - 1; slot++) {
+      var found = -1;
+      for (var i = 0; i < res.board.length; i++) {
+        if (res.board[i] === slot + 1 && i !== res.blank) { found = i; break; }
+      }
+      if (found < 0) continue;
+      var fr = (found / n) | 0, fc = found % n;
+      var rr = (slot / n) | 0, rc = slot % n;
+      ctx.drawImage(img,
+        Math.round(g.x0 + fc * g.cw), Math.round(g.y0 + fr * g.ch),
+        Math.round(g.cw), Math.round(g.ch),
+        rc * cell, rr * cell, cell, cell);
+    }
+  }
+
+  function runRecognition() {
+    if (!IMG.shot || IMG.busy) return;
+    IMG.busy = true;
+    setRecogStatus('识别中...', 'busy');
+
+    setTimeout(function () {
+      try {
+        var shot = imageToPixels(IMG.shot.el, 1500);
+        var ref = IMG.ref ? imageToPixels(IMG.ref.el, 1200) : null;
+        var res = recognizeFromPixels(shot, N, ref);
+        var solvable = isSolvable(res.board, N);
+
+        var confTxt = res.mode === 'ref'
+          ? '参考图匹配，平均相似度 ' + (res.conf * 100).toFixed(1) + '%'
+          : '边缘拼接，最优配对命中 ' + Math.round(res.conf * 100) + '%';
+
+        setBoard(res.board);
+        drawDetectPreview(res, shot);
+        drawReconPreview(res, shot);
+        $('#recog-previews').hidden = false;
+
+        var br = (res.blank / N) | 0, bc = res.blank % N;
+        if (!solvable) {
+          setRecogStatus('识别结果不可解，多半识别错了。请检查截图是否完整，或提供参考原图。', 'err');
+        } else if (res.mode === 'edge' && res.conf < 0.8) {
+          setRecogStatus('识别完成（' + confTxt + '）。空格在 (' + (br + 1) + ',' + (bc + 1) +
+            ')，可信度偏低，请对照右侧重建图核对。', 'warn');
+        } else {
+          setRecogStatus('识别完成（' + confTxt + '）。空格在 (' + (br + 1) + ',' + (bc + 1) + ')。', 'ok');
+        }
+      } catch (err) {
+        setRecogStatus('识别失败：' + String((err && err.message) || err), 'err');
+      } finally {
+        IMG.busy = false;
+      }
+    }, 30);
+  }
+
+  function acceptImageFile(slot, file) {
+    loadImageFile(file).then(function (obj) {
+      if (IMG[slot]) URL.revokeObjectURL(IMG[slot].url);
+      IMG[slot] = obj;
+      updateDropThumb(slot);
+      setPasteTarget(slot);
+      if (slot === 'shot') runRecognition();
+      else if (IMG.shot) runRecognition();
+      else setRecogStatus('已载入参考图。再上传或粘贴一张局面截图即可识别。');
+    }).catch(function (err) {
+      setRecogStatus('载入图片失败：' + String((err && err.message) || err), 'err');
+    });
+  }
+
+  /* ---------------- 初始化 ---------------- */
 
   function changeSize(n) {
     N = n;
@@ -1627,7 +2176,8 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     setMode(recommendedMode(n));
     resetResultArea();
     renderPreview(goalBoard(n));
-    setStatus('等待输入局面…');
+    setStatus('等待输入局面...');
+    if (IMG.shot) runRecognition();
   }
 
   function init() {
@@ -1641,6 +2191,76 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     for (var i = 0; i < modes.length; i++) {
       modes[i].addEventListener('change', function () { updateModeTip(); });
     }
+
+    ['shot', 'ref'].forEach(function (slot) {
+      var box = document.getElementById('drop-' + slot);
+      if (!box) return;
+      var input = box.querySelector('input[type="file"]');
+      var clearBtn = box.querySelector('.drop-x');
+
+      box.addEventListener('click', function (e) {
+        if (e.target === clearBtn) return;
+        setPasteTarget(slot);
+        input.click();
+      });
+      // 关键改动：悬停就把此框设为「粘贴目标」，不用先点击
+      box.addEventListener('mouseenter', function () { setPasteTarget(slot); });
+      box.addEventListener('mouseover', function () { setPasteTarget(slot); });
+      box.addEventListener('mouseleave', function () {
+        if (IMG.pasteTarget === slot) clearPasteTarget();
+      });
+      box.addEventListener('focus', function () { setPasteTarget(slot); });
+      box.addEventListener('focusin', function () { setPasteTarget(slot); });
+      box.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); }
+      });
+      input.addEventListener('change', function () {
+        if (input.files && input.files[0]) acceptImageFile(slot, input.files[0]);
+        input.value = '';
+      });
+      clearBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        if (IMG[slot]) { URL.revokeObjectURL(IMG[slot].url); IMG[slot] = null; }
+        updateDropThumb(slot);
+        if (slot === 'shot') {
+          $('#recog-previews').hidden = true;
+          setRecogStatus('已清除截图。');
+        } else {
+          setRecogStatus('已清除参考图。');
+          if (IMG.shot) runRecognition();
+        }
+      });
+      box.addEventListener('dragover', function (e) {
+        e.preventDefault();
+        box.classList.add('drag');
+      });
+      box.addEventListener('dragleave', function () { box.classList.remove('drag'); });
+      box.addEventListener('drop', function (e) {
+        e.preventDefault();
+        box.classList.remove('drag');
+        var f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+        if (f) acceptImageFile(slot, f);
+      });
+    });
+
+    document.addEventListener('paste', function (e) {
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      for (var k = 0; k < items.length; k++) {
+        if (items[k].kind === 'file' && /^image\//.test(items[k].type)) {
+          var file = items[k].getAsFile();
+          if (file) {
+            e.preventDefault();
+            acceptImageFile(IMG.pasteTarget || 'shot', file);
+            return;
+          }
+        }
+      }
+    });
+
+    updatePasteTargetUI();
+
+    // 鼠标移出浏览器窗口 → 取消选中（两个框都不再高亮）
+    document.documentElement.addEventListener('mouseleave', clearPasteTarget);
 
     $('#btn-shuffle').addEventListener('click', function () {
       var b = shuffleBoard(N);
@@ -1659,20 +2279,17 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     });
 
     $('#btn-solve').addEventListener('click', onSolveClick);
-
     $('#btn-next').addEventListener('click', function () { stopPlay(); stepForward(); });
     $('#btn-prev').addEventListener('click', function () { stopPlay(); stepBack(); });
     $('#btn-play').addEventListener('click', togglePlay);
 
-    // 允许直接粘贴一整串数字到第一个格子
     $('#grid').addEventListener('paste', function (e) {
       var text = (e.clipboardData || window.clipboardData).getData('text');
       if (!text) return;
       var nums = text.match(/\d+/g);
       if (!nums || nums.length !== N * N) return;
       e.preventDefault();
-      var b = nums.map(function (s) { return parseInt(s, 10); });
-      setBoard(b);
+      setBoard(nums.map(function (s) { return parseInt(s, 10); }));
     });
   }
 
