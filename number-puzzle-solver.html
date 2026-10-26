@@ -135,12 +135,21 @@
   .recog-status.is-busy { color: #a9c4ff; }
 
   .recog-previews { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-  .recog-previews figure { margin: 0; text-align: center; }
+  .recog-previews figure { margin: 0; text-align: center; position: relative; }
   .recog-previews canvas {
     width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--line);
     background: #0b0e14; display: block;
   }
   .recog-previews figcaption { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  /* 识别还原图支持拖动微调 */
+  #pv-recon { cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none; }
+  #pv-recon.is-dragging { cursor: grabbing; }
+  .recon-ghost {
+    position: fixed; pointer-events: none; z-index: 60; display: none;
+    border-radius: 8px; opacity: .95; background: #0b0e14;
+    outline: 2px solid rgba(79,140,255,.9);
+    box-shadow: 0 14px 30px -10px rgba(0,0,0,.92);
+  }
 
   .board { display: grid; gap: 8px; width: 100%; max-width: 420px; margin: 0 auto 14px; }
   .cell {
@@ -287,8 +296,8 @@
           <figcaption>网格检测</figcaption>
         </figure>
         <figure>
-          <canvas id="pv-recon" width="220" height="220"></canvas>
-          <figcaption>识别还原图（右下角为空格）</figcaption>
+          <canvas id="pv-recon" width="220" height="220" title="拖动一块到另一块上，即可交换两者，下方数字会同步更新"></canvas>
+          <figcaption>识别还原图（右下角为空格，可拖动调整）</figcaption>
         </figure>
       </div>
 
@@ -962,6 +971,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     var cleaned = el.value.replace(/[^\d]/g, '');
     if (cleaned !== el.value) el.value = cleaned;
     el.classList.toggle('is-blank', cleaned === '');
+    refreshReconFromInputs();
   }
 
   function onCellKey(e) {
@@ -1740,7 +1750,343 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
    * @param n 阶数
    * @param ref  {px,w,h} 参考原图（可为 null）
    */
+  /* ---- 参考图匹配 v2：板面锚定 + 多对齐 + 间隙搜索 + 彩色描述子 ---- */
+
+function rgvSmooth(energy, total, win) {
+  var pre = new Float64Array(total + 1);
+  for (var i = 0; i < total; i++) pre[i + 1] = pre[i] + energy[i];
+  var sm = new Float64Array(total);
+  for (var k = 0; k < total; k++) {
+    var a = Math.max(0, k - win), b = Math.min(total, k + win + 1);
+    sm[k] = (pre[b] - pre[a]) / Math.max(1, b - a);
+  }
+  return sm;
+}
+
+// 估计棋盘占据的连续区间（用于排除 UI 顶栏/底栏/留白）
+function rgvSpan(energy, total, n) {
+  var win = Math.max(3, Math.round(total / (n * 3)));
+  var sm = rgvSmooth(energy, total, win);
+  var mx = 0, i;
+  for (i = 0; i < total; i++) if (sm[i] > mx) mx = sm[i];
+  if (!(mx > 1e-6)) return null;
+  var th = mx * 0.06;
+  var run = null, start = -1;
+  for (var j = 0; j <= total; j++) {
+    var on = j < total && sm[j] >= th;
+    if (on && start < 0) start = j;
+    if (!on && start >= 0) {
+      var len = j - start;
+      if (!run || len > run.len) run = { a: start, b: j - 1, len: len };
+      start = -1;
+    }
+  }
+  if (!run || run.len < total * 0.2) return null;
+  // 端点精修到强边缘（消除平滑窗口带来的外扩）
+  var mxRaw = 0;
+  for (i = 0; i < total; i++) if (energy[i] > mxRaw) mxRaw = energy[i];
+  var strong = mxRaw * 0.18;
+  var a = run.a, b = run.b;
+  for (i = run.a; i < Math.min(total, run.a + win * 2); i++) if (energy[i] >= strong) { a = i; break; }
+  for (i = run.b; i > Math.max(0, run.b - win * 2); i--) if (energy[i] >= strong) { b = i; break; }
+  return { a: a, b: b, len: b - a + 1 };
+}
+
+function rgvBoundaryScore(energy, off, cell, n, total) {
+  var s = 0;
+  for (var k = 0; k <= n; k++) {
+    var x = Math.round(off + k * cell);
+    var m = 0;
+    for (var d = -1; d <= 1; d++) {
+      var xx = x + d;
+      if (xx >= 0 && xx < total && energy[xx] > m) m = energy[xx];
+    }
+    s += m;
+  }
+  return s;
+}
+
+// 固定格距下，全范围搜最优偏移（先粗后细）
+function rgvBestOffset(energy, total, cell, n) {
+  var span = cell * n;
+  if (span > total) return null;
+  var maxOff = Math.floor(total - span);
+  var best = { score: -1, off: 0 };
+  var step = Math.max(1, Math.round(cell / 24));
+  for (var off = 0; off <= maxOff; off += step) {
+    var s = rgvBoundaryScore(energy, off, cell, n, total);
+    if (s > best.score) best = { score: s, off: off };
+  }
+  var lo = Math.max(0, best.off - step), hi = Math.min(maxOff, best.off + step);
+  for (var off2 = lo; off2 <= hi; off2 += 0.5) {
+    var s2 = rgvBoundaryScore(energy, off2, cell, n, total);
+    if (s2 > best.score) best = { score: s2, off: off2 };
+  }
+  return best;
+}
+
+// 在锚点附近精修偏移（避免整格距相位歧义）
+function rgvRefineOffsetNear(energy, total, cell, n, near) {
+  var span = cell * n;
+  if (span > total) return null;
+  var lo = Math.max(0, near - cell * 0.12);
+  var hi = Math.min(total - span, near + cell * 0.12);
+  if (hi < lo) return null;
+  var best = null;
+  for (var off = lo; off <= hi; off += 0.5) {
+    var s = rgvBoundaryScore(energy, off, cell, n, total);
+    if (!best || s > best.score) best = { score: s, off: off };
+  }
+  return best;
+}
+
+// 棋盘是正方形：两轴共用格距，联合打分；偏移用棋盘外沿锚定
+function rgvFitSquare(ex, ey, W, H, n) {
+  var spanX = rgvSpan(ex, W, n), spanY = rgvSpan(ey, H, n);
+  var cLo, cHi;
+  var cands = [];
+  if (spanX) cands.push(spanX.len / n);
+  if (spanY) cands.push(spanY.len / n);
+  if (cands.length) {
+    var c0 = Math.min.apply(null, cands);
+    cLo = Math.max(12, c0 * 0.86);
+    cHi = Math.min(Math.min(W, H) / n, c0 * 1.15);
+    if (cHi < cLo) cHi = c0 * 1.2;
+  } else {
+    cLo = Math.max(12, Math.min(W, H) / n * 0.45);
+    cHi = Math.min(W, H) / n;
+  }
+  var step = Math.max(0.5, (cHi - cLo) / 140);
+  var best = null;
+  for (var C = cLo; C <= cHi + 1e-9; C += step) {
+    var ax = spanX ? rgvRefineOffsetNear(ex, W, C, n, spanX.a) : rgvBestOffset(ex, W, C, n);
+    var ay = spanY ? rgvRefineOffsetNear(ey, H, C, n, spanY.a) : rgvBestOffset(ey, H, C, n);
+    if (!ax || !ay) continue;
+    var sc = ax.score + ay.score;
+    if (!best || sc > best.score) best = { score: sc, cell: C, x: ax, y: ay };
+  }
+  if (best) return { cell: best.cell, x: best.x, y: best.y, spanX: spanX, spanY: spanY };
+  var dflt = Math.min(W, H) / n;
+  return {
+    cell: dflt,
+    x: rgvBestOffset(ex, W, dflt, n) || { off: 0, score: 0 },
+    y: rgvBestOffset(ey, H, dflt, n) || { off: 0, score: 0 },
+    spanX: spanX, spanY: spanY
+  };
+}
+
+// 彩色缩略图（面积平均）
+function rgvThumb(tile, TS, S) {
+  var out = new Float32Array(S * S * 3);
+  var xr = TS / S, yr = TS / S;
+  for (var ty = 0; ty < S; ty++) {
+    var y0 = Math.floor(ty * yr);
+    var y1 = Math.min(TS, Math.max(y0 + 1, Math.ceil((ty + 1) * yr)));
+    for (var tx = 0; tx < S; tx++) {
+      var x0 = Math.floor(tx * xr);
+      var x1 = Math.min(TS, Math.max(x0 + 1, Math.ceil((tx + 1) * xr)));
+      var r = 0, g = 0, b = 0, c = 0;
+      for (var y = y0; y < y1; y++) {
+        for (var x = x0; x < x1; x++) {
+          var o = (y * TS + x) * 3;
+          r += tile[o]; g += tile[o + 1]; b += tile[o + 2]; c++;
+        }
+      }
+      var d = (ty * S + tx) * 3;
+      out[d] = r / c; out[d + 1] = g / c; out[d + 2] = b / c;
+    }
+  }
+  return out;
+}
+
+// 三通道 NCC 平均
+function rgvNccColor(a, b, S) {
+  var n = S * S, tot = 0;
+  for (var c = 0; c < 3; c++) {
+    var sa = 0, sb = 0, i;
+    for (i = 0; i < n; i++) { sa += a[i * 3 + c]; sb += b[i * 3 + c]; }
+    var ma = sa / n, mb = sb / n, num = 0, da = 0, db = 0;
+    for (i = 0; i < n; i++) {
+      var u = a[i * 3 + c] - ma, v = b[i * 3 + c] - mb;
+      num += u * v; da += u * u; db += v * v;
+    }
+    var den = Math.sqrt(da * db);
+    tot += den > 1e-9 ? num / den : 0;
+  }
+  return tot / 3;
+}
+
+function rgvEnergy(px, W, H) {
+  var ex = new Float64Array(W), ey = new Float64Array(H);
+  var x, y, p0, p1, a0, a1;
+  for (y = 0; y < H; y++) {
+    var rowBase = y * W * 4;
+    for (x = 0; x < W - 1; x++) {
+      p0 = rowBase + x * 4; p1 = p0 + 4;
+      a0 = px[p0] + px[p0 + 1] + px[p0 + 2];
+      a1 = px[p1] + px[p1 + 1] + px[p1 + 2];
+      ex[x] += Math.abs(a1 - a0);
+    }
+  }
+  for (x = 0; x < W; x++) {
+    for (y = 0; y < H - 1; y++) {
+      p0 = (y * W + x) * 4; p1 = p0 + W * 4;
+      a0 = px[p0] + px[p0 + 1] + px[p0 + 2];
+      a1 = px[p1] + px[p1 + 1] + px[p1 + 2];
+      ey[y] += Math.abs(a1 - a0);
+    }
+  }
+  return { ex: ex, ey: ey };
+}
+
+// 按给定布局抽取所有格子（gapFrac = 间隙占格距的比例），返回 tiles 与标准差
+function rgvExtractTiles(shot, n, fitX, fitY, gapFrac, TS) {
+  var px = shot.px, W = shot.w, H = shot.h, NT = n * n;
+  var tiles = [], stds = [];
+  var gx = fitX.cell * gapFrac / 2, gy = fitY.cell * gapFrac / 2;
+  for (var r = 0; r < n; r++) {
+    for (var c = 0; c < n; c++) {
+      var sx = Math.round(fitX.off + c * fitX.cell + gx);
+      var sy = Math.round(fitY.off + r * fitY.cell + gy);
+      var sw = Math.max(4, Math.round(fitX.cell * (1 - gapFrac)));
+      var sh = Math.max(4, Math.round(fitY.cell * (1 - gapFrac)));
+      var tile = rgcResample(px, W, H, sx, sy, sw, sh, TS);
+      tiles.push(tile);
+      var mean = 0, sq = 0;
+      for (var i = 0; i < tile.length; i += 3) {
+        var g = (tile[i] + tile[i + 1] + tile[i + 2]) / 3;
+        mean += g; sq += g * g;
+      }
+      var m = mean / (TS * TS);
+      var v = sq / (TS * TS) - m * m;
+      stds.push(Math.sqrt(v > 0 ? v : 0));
+    }
+  }
+  return { tiles: tiles, stds: stds };
+}
+
+// 从参考图中按 4 种方式取目标格缩略图
+function rgvGoalThumbs(ref, n, TS, S, kind, refFit, gapFrac) {
+  var out = [], NT = n * n, I;
+  if (kind === 'board' && refFit) {
+    var gx = refFit.x.cell * gapFrac / 2, gy = refFit.y.cell * gapFrac / 2;
+    for (I = 0; I < NT - 1; I++) {
+      var r = (I / n) | 0, c = I % n;
+      var sx = Math.round(refFit.x.off + c * refFit.x.cell + gx);
+      var sy = Math.round(refFit.y.off + r * refFit.y.cell + gy);
+      var sw = Math.max(4, Math.round(refFit.x.cell * (1 - gapFrac)));
+      var sh = Math.max(4, Math.round(refFit.y.cell * (1 - gapFrac)));
+      out.push(rgvThumb(rgcResample(ref.px, ref.w, ref.h, sx, sy, sw, sh, TS), TS, S));
+    }
+    return out;
+  }
+  var RW = ref.w, RH = ref.h;
+  var crop;
+  if (kind === 'cover') {
+    var side = Math.min(RW, RH);
+    crop = { x: (RW - side) / 2, y: (RH - side) / 2, w: side, h: side };
+  } else {
+    crop = { x: 0, y: 0, w: RW, h: RH };
+  }
+  for (I = 0; I < NT - 1; I++) {
+    var rr = (I / n) | 0, cc = I % n;
+    var gx2 = crop.x + cc * crop.w / n;
+    var gy2 = crop.y + rr * crop.h / n;
+    out.push(rgvThumb(rgcResample(ref.px, RW, RH, gx2, gy2, crop.w / n, crop.h / n, TS), TS, S));
+  }
+  return out;
+}
+
+/**
+ * 参考图匹配 v2。
+ * 返回 { board, blank, conf, grid, mode:'ref', kind, gap }
+ */
+function rgvMatchRef(shot, n, ref) {
+  var px = shot.px, W = shot.w, H = shot.h, NT = n * n;
+  var en = rgvEnergy(px, W, H);
+  var sq = rgvFitSquare(en.ex, en.ey, W, H, n);
+  var fitX = { off: sq.x.off, cell: sq.cell };
+  var fitY = { off: sq.y.off, cell: sq.cell };
+
+  var TS = Math.max(64, Math.min(256, Math.round(sq.cell)));
+  var S = 24;
+  var gaps = [0, 0.08, 0.16];
+
+  // 用中间间隙做空格检测
+  var mid = rgvExtractTiles(shot, n, fitX, fitY, 0.08, TS);
+  var blank = 0, best = Infinity;
+  for (var i = 0; i < NT; i++) {
+    var sco = mid.stds[i] < 3 ? mid.stds[i] - 100 : mid.stds[i];
+    if (sco < best) { best = sco; blank = i; }
+  }
+  var tileIdx = [];
+  for (var i2 = 0; i2 < NT; i2++) if (i2 !== blank) tileIdx.push(i2);
+  var tn = tileIdx.length;
+
+  // 参考图自身的板面拟合（用于“参考图是已还原截图”）
+  var refFit = null;
+  if (ref && ref.px) {
+    var ren = rgvEnergy(ref.px, ref.w, ref.h);
+    var rsq = rgvFitSquare(ren.ex, ren.ey, ref.w, ref.h, n);
+    refFit = {
+      x: { off: rsq.x.off, cell: rsq.cell },
+      y: { off: rsq.y.off, cell: rsq.cell }
+    };
+  }
+
+  // 按间隙先抽一次截图 tile（与 kind 无关，避免重复计算）
+  var gapSets = [];
+  for (var gi = 0; gi < gaps.length; gi++) {
+    var gapFrac = gaps[gi];
+    var set = rgvExtractTiles(shot, n, fitX, fitY, gapFrac, TS);
+    var th = [];
+    for (var t = 0; t < tn; t++) th.push(rgvThumb(set.tiles[tileIdx[t]], TS, S));
+    gapSets.push({ gap: gapFrac, th: th });
+  }
+
+  var kinds = refFit ? ['stretch', 'cover', 'board'] : ['stretch', 'cover'];
+  var bestRes = null;
+
+  for (var ki = 0; ki < kinds.length; ki++) {
+    var kind = kinds[ki];
+    if (kind === 'cover' && Math.abs(ref.w - ref.h) < Math.max(ref.w, ref.h) * 0.02) continue;
+    for (var gj = 0; gj < gapSets.length; gj++) {
+      var gapV = gapSets[gj].gap, th2 = gapSets[gj].th;
+      var gth = rgvGoalThumbs(ref, n, TS, S, kind, refFit, gapV);
+      var cost = [];
+      for (var a = 0; a < tn; a++) {
+        var line = new Array(tn);
+        for (var b = 0; b < tn; b++) line[b] = -rgvNccColor(th2[a], gth[b], S);
+        cost.push(line);
+      }
+      var asg = rgcHungarian(cost);
+      var tot = 0;
+      for (var a2 = 0; a2 < tn; a2++) tot += -cost[a2][asg[a2]];
+      var mean = tot / tn;
+      if (!bestRes || mean > bestRes.mean) {
+        var bd = new Array(NT);
+        for (var z = 0; z < NT; z++) bd[z] = 0;
+        for (var i3 = 0; i3 < tn; i3++) bd[tileIdx[i3]] = asg[i3] + 1;
+        bestRes = { mean: mean, board: bd, kind: kind, gap: gapV };
+      }
+    }
+  }
+
+  return {
+    board: bestRes.board,
+    blank: blank,
+    TN: tn,
+    grid: { x0: fitX.off, y0: fitY.off, cw: fitX.cell, ch: fitY.cell },
+    conf: bestRes.mean,
+    mode: 'ref',
+    kind: bestRes.kind,
+    gap: bestRes.gap
+  };
+}
+
   function recognizeFromPixels(shot, n, ref) {
+    // 有参考图：走增强的参考图匹配 v2
+    if (ref && ref.px) return rgvMatchRef(shot, n, ref);
     var px = shot.px, W = shot.w, H = shot.h;
     var x, y, p0, p1, a0, a1;
 
@@ -1765,8 +2111,9 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
       }
     }
 
-    var fitX = rgcFitAxis(ex, W, n);
-    var fitY = rgcFitAxis(ey, H, n);
+    var sq = rgvFitSquare(ex, ey, W, H, n);
+    var fitX = { off: sq.x.off, cell: sq.cell };
+    var fitY = { off: sq.y.off, cell: sq.cell };
 
     // 2. 切格
     var TS = Math.max(64, Math.min(256, Math.round(Math.min(fitX.cell, fitY.cell))));
@@ -1783,13 +2130,13 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
         var sh = Math.max(4, Math.round(fitY.cell) - inset * 2);
         var tile = rgcResample(px, W, H, sx, sy, sw, sh, TS);
         tiles.push(tile);
-        var mean = 0, sq = 0;
+        var mean = 0, sumSq = 0;
         for (var i2 = 0; i2 < tile.length; i2 += 3) {
           var g = (tile[i2] + tile[i2 + 1] + tile[i2 + 2]) / 3;
-          mean += g; sq += g * g;
+          mean += g; sumSq += g * g;
         }
         var m = mean / (TS * TS);
-        var v = sq / (TS * TS) - m * m;
+        var v = sumSq / (TS * TS) - m * m;
         stds.push(Math.sqrt(v > 0 ? v : 0));
       }
     }
@@ -1804,57 +2151,6 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     var tileIdx = [];
     for (var i4 = 0; i4 < NT; i4++) if (i4 !== blank) tileIdx.push(i4);
     var tn = tileIdx.length;
-
-    // 3A. 有参考图
-    if (ref && ref.px) {
-      var S = 24;
-      var th = [];
-      for (var i5 = 0; i5 < tn; i5++) th.push(rgcGrayThumb(tiles[tileIdx[i5]], TS, S));
-
-      var RW = ref.w, RH = ref.h;
-      var side = Math.min(RW, RH);
-      var crops = [
-        { x: 0, y: 0, w: RW, h: RH, tag: 'stretch' },
-        { x: (RW - side) / 2, y: (RH - side) / 2, w: side, h: side, tag: 'square' }
-      ];
-      var cands = [];
-      for (var ci = 0; ci < crops.length; ci++) {
-        var cp = crops[ci];
-        var goalThumbs = [];
-        for (var gr = 0; gr < n && goalThumbs.length < NT - 1; gr++) {
-          for (var gc = 0; gc < n && goalThumbs.length < NT - 1; gc++) {
-            var gx = cp.x + gc * cp.w / n;
-            var gy = cp.y + gr * cp.h / n;
-            var gt = rgcResample(ref.px, RW, RH, gx, gy, cp.w / n, cp.h / n, TS);
-            goalThumbs.push(rgcGrayThumb(gt, TS, S));
-          }
-        }
-        if (goalThumbs.length < tn) continue;
-
-        var cost = [];
-        for (var a = 0; a < tn; a++) {
-          var line = new Array(tn);
-          for (var b = 0; b < tn; b++) line[b] = -rgcNcc(th[a], goalThumbs[b]);
-          cost.push(line);
-        }
-        var asg = rgcHungarian(cost);
-        var tot = 0;
-        for (var a2 = 0; a2 < tn; a2++) tot += -cost[a2][asg[a2]];
-        cands.push({ tag: cp.tag, asg: asg, score: tot / tn });
-      }
-      if (cands.length) {
-        cands.sort(function (A, B) { return B.score - A.score; });
-        var bestRef = cands[0];
-        var boardR = new Array(NT);
-        for (var i6 = 0; i6 < NT; i6++) boardR[i6] = 0;
-        for (var i7 = 0; i7 < tn; i7++) boardR[tileIdx[i7]] = bestRef.asg[i7] + 1;
-        return {
-          board: boardR, blank: blank, TN: tn,
-          grid: { x0: fitX.off, y0: fitY.off, cw: fitX.cell, ch: fitY.cell },
-          conf: bestRef.score, mode: 'ref', crop: bestRef.tag
-        };
-      }
-    }
 
     // 3B. 边缘拼接
     var EW = Math.max(1, Math.round(TS * 0.012));
@@ -1978,6 +2274,10 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
   var IMG = { shot: null, ref: null, pasteTarget: 'shot', busy: false };
 
+  // 最近一次识别结果，供「还原图」拖动微调使用
+  var RECON = null;      // { res: 识别结果, shot: 像素, board: 当前数字排列 }
+  var RECON_DRAG = null; // { src, dst, ghost, cellCss }
+
   // 鼠标悬停（或键盘聚焦）即可切换粘贴目标，不需要点击
   function setPasteTarget(slot) {
     if (IMG.pasteTarget === slot) return;
@@ -2087,7 +2387,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
       Math.max(1, g.cw * sc - 1), Math.max(1, g.ch * sc - 1));
   }
 
-  function drawReconPreview(res, shotPixels) {
+  function drawReconPreview(res, shotPixels, board, highlight) {
     var cv = $('#pv-recon');
     if (!cv || !shotPixels) return;
     var S = 220, n = N;
@@ -2100,10 +2400,11 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
 
     var g = res.grid;
     var img = shotPixels.canvas;
+    var b = board || res.board;
     for (var slot = 0; slot < n * n - 1; slot++) {
       var found = -1;
-      for (var i = 0; i < res.board.length; i++) {
-        if (res.board[i] === slot + 1 && i !== res.blank) { found = i; break; }
+      for (var i = 0; i < b.length; i++) {
+        if (b[i] === slot + 1 && i !== res.blank) { found = i; break; }
       }
       if (found < 0) continue;
       var fr = (found / n) | 0, fc = found % n;
@@ -2113,6 +2414,161 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
         Math.round(g.cw), Math.round(g.ch),
         rc * cell, rr * cell, cell, cell);
     }
+
+    // 拖动时高亮：蓝色 = 被拖动块，橙色 = 落点
+    if (highlight) {
+      var hlSrc = (typeof highlight === 'number') ? highlight : highlight.src;
+      var hlDst = (typeof highlight === 'number') ? -1 : highlight.dst;
+      if (hlDst !== undefined && hlDst !== null && hlDst >= 0) {
+        var dr = (hlDst / n) | 0, dc = hlDst % n;
+        ctx.strokeStyle = 'rgba(240,165,62,.95)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(dc * cell + 1.5, dr * cell + 1.5, cell - 3, cell - 3);
+      }
+      if (hlSrc !== undefined && hlSrc !== null && hlSrc >= 0 && hlSrc !== hlDst) {
+        var sr = (hlSrc / n) | 0, sc = hlSrc % n;
+        ctx.strokeStyle = 'rgba(79,140,255,.95)';
+        ctx.lineWidth = 3;
+        ctx.strokeRect(sc * cell + 1.5, sr * cell + 1.5, cell - 3, cell - 3);
+      }
+    }
+  }
+
+  /* ---------------- 还原图拖动微调 ---------------- */
+
+  // 把指针坐标换算成吸附到哪个格子
+  function reconSlotAt(cv, clientX, clientY) {
+    var rect = cv.getBoundingClientRect();
+    if (!rect.width || !rect.height) return -1;
+    var col = Math.floor(((clientX - rect.left) / rect.width) * N);
+    var row = Math.floor(((clientY - rect.top) / rect.height) * N);
+    if (col < 0 || col >= N || row < 0 || row >= N) return -1;
+    return row * N + col;
+  }
+
+  function reconGhostPosition(x, y) {
+    if (!RECON_DRAG || !RECON_DRAG.ghost) return;
+    var c = RECON_DRAG.cellCss || 0;
+    RECON_DRAG.ghost.style.left = (x - c / 2) + 'px';
+    RECON_DRAG.ghost.style.top = (y - c / 2) + 'px';
+  }
+
+  // 生成跟随指针的"拿起块"幽灵图（从截图里裁出该块的像素）
+  function reconMakeGhost(slot, cv) {
+    if (!RECON) return;
+    var rect = cv.getBoundingClientRect();
+    var cellCss = rect.width / N;
+    var ghost = document.createElement('canvas');
+    ghost.className = 'recon-ghost';
+    var S = 96;
+    ghost.width = S; ghost.height = S;
+    var g2 = ghost.getContext('2d');
+    var g = RECON.res.grid;
+    var idx = RECON.board.indexOf(slot + 1);
+    if (idx >= 0) {
+      var fr = (idx / N) | 0, fc = idx % N;
+      g2.drawImage(RECON.shot.canvas,
+        Math.round(g.x0 + fc * g.cw), Math.round(g.y0 + fr * g.ch),
+        Math.round(g.cw), Math.round(g.ch), 0, 0, S, S);
+    }
+    ghost.style.width = cellCss + 'px';
+    ghost.style.height = cellCss + 'px';
+    ghost.style.display = 'block';
+    document.body.appendChild(ghost);
+    RECON_DRAG.cellCss = cellCss;
+    RECON_DRAG.ghost = ghost;
+  }
+
+  // 拖动会改动数字，先与下方输入框同步，避免覆盖用户手工修改
+  function reconSyncBoard() {
+    var cur = readBoard();
+    if (cur.board) { RECON.board = cur.board; return true; }
+    return false;
+  }
+
+  // 下方数字被手工修改时，让还原图跟着重绘，保持两者一致
+  function refreshReconFromInputs() {
+    if (!RECON || RECON_DRAG || !RECON.res || !RECON.shot) return;
+    var cur = readBoard();
+    if (!cur.board) return;
+    RECON.board = cur.board;
+    drawReconPreview(RECON.res, RECON.shot, RECON.board, null);
+  }
+
+  // 交换两个格子的数字（也就交换了还原图里这两块的图片）
+  function reconSwapTiles(a, b) {
+    if (!RECON || a === b) return;
+    if (!reconSyncBoard()) {
+      setRecogStatus('下方数字填写不合法，请先保证 1 ~ N²-1 各出现一次、且只有一个空格，再拖动调整。', 'warn');
+      drawReconPreview(RECON.res, RECON.shot, RECON.board, null);
+      return;
+    }
+    var va = a + 1, vb = b + 1;
+    var ia = RECON.board.indexOf(va);
+    var ib = RECON.board.indexOf(vb);
+    if (ia < 0 || ib < 0) return;
+    RECON.board[ia] = vb;
+    RECON.board[ib] = va;
+    setBoard(RECON.board);
+    drawReconPreview(RECON.res, RECON.shot, RECON.board, null);
+    if (isSolvable(RECON.board, N)) {
+      setRecogStatus('已手动调整：交换了 ' + va + ' 与 ' + vb + '，下方数字已同步。', 'ok');
+    } else {
+      setRecogStatus('已手动调整：交换了 ' + va + ' 与 ' + vb + '。单次交换会改变奇偶性，当前局面不可解，可再交换一次或重新识别。', 'warn');
+    }
+  }
+
+  function onReconDown(e) {
+    if (!RECON || RECON_DRAG) return;
+    var cv = $('#pv-recon');
+    var slot = reconSlotAt(cv, e.clientX, e.clientY);
+    if (slot < 0 || slot === N * N - 1) return; // 右下角空格固定，不可拖动
+    e.preventDefault();
+    RECON_DRAG = { src: slot, dst: slot, ghost: null, cellCss: 0 };
+    try { cv.setPointerCapture(e.pointerId); } catch (err) { /* 忽略 */ }
+    cv.classList.add('is-dragging');
+    reconMakeGhost(slot, cv);
+    reconGhostPosition(e.clientX, e.clientY);
+    drawReconPreview(RECON.res, RECON.shot, RECON.board, { src: slot, dst: -1 });
+  }
+
+  function onReconMove(e) {
+    if (!RECON_DRAG) return;
+    e.preventDefault();
+    var cv = $('#pv-recon');
+    var slot = reconSlotAt(cv, e.clientX, e.clientY);
+    var dst = (slot >= 0 && slot < N * N - 1) ? slot : -1;
+    reconGhostPosition(e.clientX, e.clientY);
+    if (dst !== RECON_DRAG.dst) {
+      RECON_DRAG.dst = dst;
+      drawReconPreview(RECON.res, RECON.shot, RECON.board, { src: RECON_DRAG.src, dst: dst });
+    }
+  }
+
+  function onReconUp(e) {
+    if (!RECON_DRAG) return;
+    var drag = RECON_DRAG;
+    RECON_DRAG = null;
+    var cv = $('#pv-recon');
+    cv.classList.remove('is-dragging');
+    if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+    var slot = reconSlotAt(cv, e.clientX, e.clientY);
+    var dst = (slot >= 0 && slot < N * N - 1) ? slot : -1;
+    if (dst >= 0 && dst !== drag.src) {
+      reconSwapTiles(drag.src, dst);
+    } else {
+      drawReconPreview(RECON.res, RECON.shot, RECON.board, null);
+    }
+  }
+
+  function onReconCancel() {
+    if (!RECON_DRAG) return;
+    var drag = RECON_DRAG;
+    RECON_DRAG = null;
+    var cv = $('#pv-recon');
+    if (cv) cv.classList.remove('is-dragging');
+    if (drag.ghost && drag.ghost.parentNode) drag.ghost.parentNode.removeChild(drag.ghost);
+    if (RECON) drawReconPreview(RECON.res, RECON.shot, RECON.board, null);
   }
 
   function runRecognition() {
@@ -2127,13 +2583,19 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
         var res = recognizeFromPixels(shot, N, ref);
         var solvable = isSolvable(res.board, N);
 
+        // 记录识别结果，供「还原图」拖动微调
+        RECON = { res: res, shot: shot, board: res.board.slice() };
+
+        var refKindTxt = res.kind === 'board' ? '参考图按已还原板面匹配'
+          : res.kind === 'cover' ? '参考图按居中裁切匹配'
+          : '参考图按整图匹配';
         var confTxt = res.mode === 'ref'
-          ? '参考图匹配，平均相似度 ' + (res.conf * 100).toFixed(1) + '%'
+          ? refKindTxt + '，平均相似度 ' + (res.conf * 100).toFixed(1) + '%'
           : '边缘拼接，最优配对命中 ' + Math.round(res.conf * 100) + '%';
 
         setBoard(res.board);
         drawDetectPreview(res, shot);
-        drawReconPreview(res, shot);
+        drawReconPreview(res, shot, RECON.board, null);
         $('#recog-previews').hidden = false;
 
         var br = (res.blank / N) | 0, bc = res.blank % N;
@@ -2177,6 +2639,8 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     resetResultArea();
     renderPreview(goalBoard(n));
     setStatus('等待输入局面...');
+    RECON = null;
+    onReconCancel();
     if (IMG.shot) runRecognition();
   }
 
@@ -2224,6 +2688,8 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
         updateDropThumb(slot);
         if (slot === 'shot') {
           $('#recog-previews').hidden = true;
+          RECON = null;
+          onReconCancel();
           setRecogStatus('已清除截图。');
         } else {
           setRecogStatus('已清除参考图。');
@@ -2267,6 +2733,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
       setBoard(b);
       resetResultArea();
       renderPreview(b);
+      refreshReconFromInputs();
       setStatus('已随机打乱，点击「开始计算」求解。');
     });
 
@@ -2275,6 +2742,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
       setBoard(b);
       resetResultArea();
       renderPreview(b);
+      refreshReconFromInputs();
       setStatus('已还原为目标局面。');
     });
 
@@ -2283,6 +2751,16 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
     $('#btn-prev').addEventListener('click', function () { stopPlay(); stepBack(); });
     $('#btn-play').addEventListener('click', togglePlay);
 
+    // 识别还原图：拖动一块到另一块上即可交换，下方数字同步更新
+    var reconCv = $('#pv-recon');
+    if (reconCv) {
+      reconCv.addEventListener('pointerdown', onReconDown);
+      reconCv.addEventListener('pointermove', onReconMove);
+      reconCv.addEventListener('pointerup', onReconUp);
+      reconCv.addEventListener('pointercancel', onReconCancel);
+      reconCv.addEventListener('lostpointercapture', onReconCancel);
+    }
+
     $('#grid').addEventListener('paste', function (e) {
       var text = (e.clipboardData || window.clipboardData).getData('text');
       if (!text) return;
@@ -2290,6 +2768,7 @@ if (typeof self !== 'undefined' && typeof self.postMessage === 'function' && typ
       if (!nums || nums.length !== N * N) return;
       e.preventDefault();
       setBoard(nums.map(function (s) { return parseInt(s, 10); }));
+      refreshReconFromInputs();
     });
   }
 
